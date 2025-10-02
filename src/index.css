@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-slate-50 text-slate-900 antialiased;
+    background-image: radial-gradient(circle at top left, rgba(254, 249, 195, 0.8), rgba(224, 242, 254, 0.55) 40%, rgba(226, 232, 240, 0.85) 75%);
+    background-attachment: fixed;
+  }
+
+  *,
+  *::before,
+  *::after {
+    @apply box-border;
+  }
+}
