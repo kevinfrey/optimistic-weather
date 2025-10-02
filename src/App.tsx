@@ -30,7 +30,7 @@ const formatTime = (date: Date) =>
 
 function App() {
   const [query, setQuery] = useState('')
-  const [units, setUnits] = useState<Units>('metric')
+  const [units, setUnits] = useState<Units>('imperial')
   const [forecast, setForecast] = useState<OptimisticForecast | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,18 +130,18 @@ function App() {
                   aria-label="Select temperature units"
                 >
                   <ToggleGroupItem
-                    value="metric"
-                    className="rounded-full px-4"
-                    aria-pressed={units === 'metric'}
-                  >
-                    Celsius (°C)
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
                     value="imperial"
                     className="rounded-full px-4"
                     aria-pressed={units === 'imperial'}
                   >
                     Fahrenheit (°F)
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="metric"
+                    className="rounded-full px-4"
+                    aria-pressed={units === 'metric'}
+                  >
+                    Celsius (°C)
                   </ToggleGroupItem>
                 </ToggleGroup>
               </div>
