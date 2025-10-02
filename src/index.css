@@ -5,17 +5,66 @@
 @layer base {
   :root {
     color-scheme: light;
+    --background: 210 40% 96.1%;
+    --foreground: 222.2 47.4% 11.2%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 199 89% 85%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 92%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 198 90% 88%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221 83% 53%;
+    --radius: 0.9rem;
   }
 
-  body {
-    @apply min-h-screen bg-slate-50 text-slate-900 antialiased;
-    background-image: radial-gradient(circle at top left, rgba(254, 249, 195, 0.8), rgba(224, 242, 254, 0.55) 40%, rgba(226, 232, 240, 0.85) 75%);
-    background-attachment: fixed;
+  .dark {
+    color-scheme: dark;
+    --background: 224 71% 4%;
+    --foreground: 210 20% 98%;
+    --card: 224 71% 6%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 71% 5%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 222.2 26% 24%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 222.2 26% 24%;
+    --muted-foreground: 215 20.2% 65%;
+    --accent: 217 32% 17%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 217 33% 18%;
+    --input: 217 33% 18%;
+    --ring: 224 76% 48%;
+    --radius: 0.9rem;
   }
 
   *,
   *::before,
   *::after {
-    @apply box-border;
+    @apply box-border border-border;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    background-image: radial-gradient(
+      circle at top left,
+      rgba(254, 249, 195, 0.8),
+      rgba(224, 242, 254, 0.55) 40%,
+      rgba(226, 232, 240, 0.85) 75%
+    );
+    background-attachment: fixed;
   }
 }
