@@ -59,7 +59,7 @@ function App() {
       setError('Enter a city, state, or zip to see the optimistic outlook.')
       return
     }
-    runSearch(query, units)
+    void runSearch(query, units)
   }
 
   const handleUnitsSelect = (nextUnits: Units | '') => {
@@ -68,13 +68,13 @@ function App() {
     }
     setUnits(nextUnits)
     if (lastQuery) {
-      runSearch(lastQuery, nextUnits)
+      void runSearch(lastQuery, nextUnits)
     }
   }
 
   const handleQuickPick = (preset: string) => {
     setQuery(preset)
-    runSearch(preset, units)
+    void runSearch(preset, units)
   }
 
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'

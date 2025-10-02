@@ -9,11 +9,11 @@ import type {
 const API_BASE = 'https://api.openweathermap.org'
 
 const assertApiKey = () => {
-  const key = import.meta.env.VITE_OPENWEATHER_API_KEY
+  const key = import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined
   if (!key) {
     throw new Error('Missing OpenWeather API key. Add VITE_OPENWEATHER_API_KEY to your environment.')
   }
-  return key as string
+  return key
 }
 
 const fetchJson = async <T>(url: string): Promise<T> => {

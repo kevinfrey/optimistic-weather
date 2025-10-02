@@ -1,73 +1,59 @@
-# React + TypeScript + Vite
+# Optimistic Weather
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Optimistic Weather is a Vite + React + TypeScript single-page app that reframes OpenWeather forecasts into upbeat, glass-half-full highlights. It pairs a bright UI powered by Tailwind CSS and shadcn/ui with a rules engine that celebrates every silver lining—dry spells, blue-sky windows, friendly breezes, humidity perks, and more.
 
-Currently, two official plugins are available:
+## Features
+- **Optimistic forecasting** – Converts OpenWeather 5-day/3-hour forecasts into positive takeaways for the next 24 hours.
+- **Segmented unit toggle** – Instant Fahrenheit/Celsius switch with optimistic copy preserved across units.
+- **shadcn/ui styling** – Tailwind CSS design tokens and components deliver a polished, glassmorphism-inspired layout.
+- **Resilient UX** – Friendly error states when locations fail lookup, quick-pick suggestions, and loading feedback.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Requirements
+- Node.js 20+
+- An OpenWeather API key (free tier works). Enable the Geocoding API and 5 day / 3 hour Forecast API.
 
-## React Compiler
+## Getting Started
+1. Clone the repository and install dependencies:
+   ```sh
+   npm install
+   ```
+2. Copy the environment file and add your API key:
+   ```sh
+   cp .env.example .env
+   # edit .env and paste your OpenWeather key
+   ```
+3. Start the development server:
+   ```sh
+   npm run dev
+   ```
+   Vite prints a local URL—open it in your browser to explore the optimistic outlooks.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Scripts
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start Vite’s development server with hot module reloading. |
+| `npm run build` | Type-check and produce a production build under `dist/`. |
+| `npm run preview` | Serve the built assets locally for a production sanity check. |
+| `npm run lint` | Run ESLint with type-aware rules using your local TypeScript project. |
 
-## Expanding the ESLint configuration
+## Linting & Code Quality
+- ESLint is configured with `typescript-eslint`’s type-aware presets plus stylistic rules. The project is linted against the actual TypeScript program, so editor diagnostics match CI.
+- React fast-refresh rules, Tailwind-aware tokens, and strict TypeScript practices (`consistent-type-imports`, `no-floating-promises`) are enforced.
+- Fix most issues automatically with `npm run lint -- --fix`.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## UI Stack
+- **Tailwind CSS** with custom design tokens in `src/index.css`.
+- **shadcn/ui** button, input, card, and toggle-group primitives for consistent components.
+- **Lucide Icons** available for future optimistic iconography.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## API Notes
+- Forecast requests call `fetchOptimisticForecast` in `src/services/openWeather.ts`, which performs geocoding then constructs highlights from the first ~24 hours of data.
+- The app surfaces error details when the API returns 4xx/5xx responses, so you can see authentication or location issues instantly.
+- To avoid rate limits in production, consider caching responses or throttling repeated lookups.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Deployment
+1. Build with `npm run build`.
+2. Deploy the `dist/` folder to your hosting provider of choice (Netlify, Vercel, AWS S3 + CloudFront, etc.).
+3. Set `VITE_OPENWEATHER_API_KEY` in your deployment environment—Vite exposes variables prefixed with `VITE_` at runtime.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Enjoy spreading sunshine, even when the forecast looks cloudy!

@@ -36,12 +36,8 @@ export interface ForecastEntry {
   }
   visibility: number
   pop: number
-  rain?: {
-    [key: string]: number
-  }
-  snow?: {
-    [key: string]: number
-  }
+  rain?: Record<string, number>
+  snow?: Record<string, number>
 }
 
 export interface ForecastResponse {
