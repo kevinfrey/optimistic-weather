@@ -163,19 +163,16 @@ function App() {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-16">
         <header className="space-y-3 text-center">
           <div className="flex justify-center">
-            <span className="relative inline-flex items-center justify-center text-4xl font-black uppercase tracking-[0.4em] text-transparent sm:text-5xl">
+            <span className="relative inline-flex items-center justify-center text-5xl font-black uppercase tracking-[0.4em] text-transparent sm:text-6xl">
               <span className="absolute inset-0 -scale-x-100 transform bg-gradient-to-r from-[#ff6ec7] via-[#ffb347] to-[#32fff0] opacity-80 blur-md" aria-hidden />
               <span className="relative bg-gradient-to-r from-[#ff6ec7] via-[#ffdd55] to-[#32fff0] bg-clip-text drop-shadow-[0_0_18px_rgba(255,136,206,0.55)]">
                 Bright Side
               </span>
             </span>
           </div>
-          <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-800 sm:text-3xl">
             Flip every forecast into a reason to smile
           </h1>
-          <p className="text-base text-slate-600">
-            Powered by OpenWeather and a healthy dose of silver linings.
-          </p>
         </header>
 
         <Card className="border-slate-200/70 bg-white/85 shadow-xl backdrop-blur-sm">
