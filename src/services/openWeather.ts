@@ -207,7 +207,15 @@ const craftHighlights = (
     return []
   }
 
-  const pops = horizon
+  const normalizedPopValues = horizon.map((entry) => {
+    const value = entry.pop ?? 0
+    if (Number.isNaN(value)) {
+      return 0
+    }
+    return Math.min(Math.max(value, 0), 1)
+  })
+
+  const popsWithData = horizon
     .map((entry) => entry.pop)
     .filter((pop): pop is number => typeof pop === 'number' && !Number.isNaN(pop))
 
@@ -220,14 +228,17 @@ const craftHighlights = (
     return precipitationVolume > 0 || wetWeather || highPop
   }).length
 
-  let drynessRatio = pops.length ? 1 - average(pops.map((pop) => Math.min(Math.max(pop, 0), 1))) : 1
+  const avgPopValue = normalizedPopValues.length ? average(normalizedPopValues) : 0
+  let drynessRatio = 1 - avgPopValue
   const wetPenalty = 1 - wetBlocks / horizon.length
   drynessRatio = Math.min(drynessRatio, wetPenalty)
   drynessRatio = Math.max(0, Math.min(1, drynessRatio))
   const avgDryness = Math.round(drynessRatio * 100)
+  const rainChancePercent = Math.round((1 - drynessRatio) * 100)
   const first = horizon[0]
 
   const cloudOpenings = Math.round(average(horizon.map((entry) => 100 - (entry.clouds?.all ?? 0))))
+  const avgCloudCover = Math.round(average(horizon.map((entry) => entry.clouds?.all ?? 0)))
   const humidity = first.main.humidity
   const feelsGap = first.main.feels_like - first.main.temp
   const visibilityMeters = first.visibility
@@ -240,6 +251,7 @@ const craftHighlights = (
   const windValue = isMetric ? metersPerSecondToKph(windSpeed) : windSpeed
   const windUnits = isMetric ? 'km/h' : 'mph'
   const gustValue = gust ? (isMetric ? metersPerSecondToKph(gust) : gust) : undefined
+  const unitsSuffix = units === 'metric' ? '°C' : '°F'
 
   const highlights: OptimisticHighlight[] = []
 
@@ -252,14 +264,18 @@ const craftHighlights = (
           detail: avgDryness === 100
             ? 'Skies look bone-dry—perfect excuse to plan something outside.'
             : 'Still, a pocket umbrella doubles as a sunshade—win-win.',
+          metricLabel: 'Rain chance',
+          metricValue: `${rainChancePercent}%`,
         }
       : {
           id: 'refresh',
           title: 'Sky Refills Incoming',
           takeaway: 'Showers lined up to refresh the plants and clear the air.',
-          detail: pops.length
-            ? `${Math.round(average(pops) * 100)}% rain chance means gardens are celebrating—perfect for indoor creativity.`
+          detail: popsWithData.length
+            ? `${Math.round(average(popsWithData) * 100)}% rain chance means gardens are celebrating—perfect for indoor creativity.`
             : 'Precipitation is likely based on radar trends—queue up a cozy indoor game plan.',
+          metricLabel: 'Rain chance',
+          metricValue: `${rainChancePercent}%`,
         },
   )
 
@@ -268,6 +284,8 @@ const craftHighlights = (
     title: 'Blue-Sky Windows',
     takeaway: `${cloudOpenings}% of the next stretch features blue-sky cameos.`,
     detail: 'Great lighting for photos and quick outdoor breaks.',
+    metricLabel: 'Avg cloud cover',
+    metricValue: `${avgCloudCover}%`,
   })
 
   if (Math.abs(feelsGap) <= 1.5) {
@@ -275,18 +293,24 @@ const craftHighlights = (
       id: 'feels-like',
       title: 'Comfort Index',
       takeaway: 'Feels-like temps match the actual read—no wardrobe curveballs.',
+      metricLabel: 'Feels difference',
+      metricValue: `±0${unitsSuffix}`,
     })
   } else if (feelsGap < 0) {
     highlights.push({
       id: 'cooler',
       title: 'Built-In Breeze',
       takeaway: `Feels about ${Math.abs(Math.round(feelsGap))}° cooler than the thermometer—prime for active plans.`,
+      metricLabel: 'Feels difference',
+      metricValue: `${Math.round(feelsGap)}${unitsSuffix}`,
     })
   } else {
     highlights.push({
       id: 'warmer',
       title: 'Cozy Warmth',
       takeaway: `Feels around ${Math.round(feelsGap)}° warmer—nature's heated blanket.`,
+      metricLabel: 'Feels difference',
+      metricValue: `+${Math.round(feelsGap)}${unitsSuffix}`,
     })
   }
 
@@ -295,12 +319,16 @@ const craftHighlights = (
       id: 'humidity',
       title: 'Ideal Hair Day',
       takeaway: `${humidity}% humidity keeps frizz in check and comfort high.`,
+      metricLabel: 'Humidity',
+      metricValue: `${humidity}%`,
     })
   } else {
     highlights.push({
       id: 'hydration',
       title: 'Humidity Bonus',
       takeaway: `${humidity}% humidity means houseplants and skin stay happily hydrated.`,
+      metricLabel: 'Humidity',
+      metricValue: `${humidity}%`,
     })
   }
 
@@ -309,6 +337,8 @@ const craftHighlights = (
       id: 'visibility',
       title: 'Long-Range Views',
       takeaway: `Visibility stretches roughly ${visibilityValue.toFixed(1)} ${visibilityUnits}—panorama time!`,
+      metricLabel: 'Visibility',
+      metricValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
     })
   } else {
     const nextSunset = new Date((horizon[0].dt + timezoneOffsetSeconds) * 1000)
@@ -320,6 +350,8 @@ const craftHighlights = (
         hour: 'numeric',
         minute: '2-digit',
       })}.`,
+      metricLabel: 'Visibility',
+      metricValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
     })
   }
 
@@ -333,6 +365,10 @@ const craftHighlights = (
           title: 'Friendly Breeze',
           takeaway: `${windValue.toFixed(1)} ${windUnits} winds keep the air feeling fresh.`,
           detail: 'Perfect kite or sail training weather.',
+          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
+          metricValue: gustValue
+            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
+            : `${windValue.toFixed(1)} ${windUnits}`,
         }
       : {
           id: 'wind-energy',
@@ -341,6 +377,10 @@ const craftHighlights = (
           detail: gustValue
             ? `Gusts near ${gustValue.toFixed(1)} ${windUnits}. Secure loose items then enjoy the drama.`
             : 'Secure patio furniture, then lean into the dynamic skies.',
+          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
+          metricValue: gustValue
+            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
+            : `${windValue.toFixed(1)} ${windUnits}`,
         },
   )
 

@@ -371,6 +371,12 @@ function App() {
                     <h3 className="text-lg font-semibold text-slate-900">{highlight.title}</h3>
                     <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
                     {highlight.detail && <p className="text-xs text-slate-500">{highlight.detail}</p>}
+                    {highlight.metricLabel && highlight.metricValue && (
+                      <div className="mt-auto flex items-center justify-between text-xs text-slate-500">
+                        <span>{highlight.metricLabel}</span>
+                        <span className="font-semibold text-slate-700">{highlight.metricValue}</span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

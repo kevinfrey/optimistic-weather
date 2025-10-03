@@ -65,6 +65,8 @@ export interface OptimisticHighlight {
   title: string
   takeaway: string
   detail?: string
+  metricLabel?: string
+  metricValue?: string
 }
 
 export interface OptimisticForecast {
