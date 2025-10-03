@@ -207,8 +207,24 @@ const craftHighlights = (
     return []
   }
 
-  const pops = horizon.map((entry) => entry.pop ?? 0)
-  const avgDryness = Math.round((1 - average(pops)) * 100)
+  const pops = horizon
+    .map((entry) => entry.pop)
+    .filter((pop): pop is number => typeof pop === 'number' && !Number.isNaN(pop))
+
+  const wetBlocks = horizon.filter((entry) => {
+    const precipitationVolume = (entry.rain?.['3h'] ?? 0) + (entry.snow?.['3h'] ?? 0)
+    const wetWeather = entry.weather.some((condition) =>
+      ['Rain', 'Drizzle', 'Thunderstorm', 'Snow'].includes(condition.main),
+    )
+    const highPop = (entry.pop ?? 0) >= 0.4
+    return precipitationVolume > 0 || wetWeather || highPop
+  }).length
+
+  let drynessRatio = pops.length ? 1 - average(pops.map((pop) => Math.min(Math.max(pop, 0), 1))) : 1
+  const wetPenalty = 1 - wetBlocks / horizon.length
+  drynessRatio = Math.min(drynessRatio, wetPenalty)
+  drynessRatio = Math.max(0, Math.min(1, drynessRatio))
+  const avgDryness = Math.round(drynessRatio * 100)
   const first = horizon[0]
 
   const cloudOpenings = Math.round(average(horizon.map((entry) => 100 - (entry.clouds?.all ?? 0))))
@@ -228,18 +244,22 @@ const craftHighlights = (
   const highlights: OptimisticHighlight[] = []
 
   highlights.push(
-    avgDryness >= 50
+    avgDryness >= 55
       ? {
           id: 'dryness',
           title: 'Dry Skies Bias',
           takeaway: `${avgDryness}% odds you stay splash-free.`,
-          detail: "Still, a pocket umbrella doubles as a sunshade—win-win.",
+          detail: avgDryness === 100
+            ? 'Skies look bone-dry—perfect excuse to plan something outside.'
+            : 'Still, a pocket umbrella doubles as a sunshade—win-win.',
         }
       : {
           id: 'refresh',
           title: 'Sky Refills Incoming',
           takeaway: 'Showers lined up to refresh the plants and clear the air.',
-          detail: `${Math.round(average(pops) * 100)}% rain chance means gardens are celebrating—perfect for indoor creativity.`,
+          detail: pops.length
+            ? `${Math.round(average(pops) * 100)}% rain chance means gardens are celebrating—perfect for indoor creativity.`
+            : 'Precipitation is likely based on radar trends—queue up a cozy indoor game plan.',
         },
   )
 
