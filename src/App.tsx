@@ -162,9 +162,11 @@ function App() {
     <div className="relative">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-16">
         <header className="space-y-3 text-center">
-          <p className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-500">
-            Optimistic Weather
-          </p>
+          <div className="flex justify-center">
+            <span className="bg-gradient-to-r from-[#ff6ec7] via-[#f9f047] to-[#32fff0] bg-clip-text text-4xl font-black uppercase tracking-[0.4em] text-transparent drop-shadow-[0_0_14px_rgba(255,110,199,0.45)] sm:text-5xl">
+              Bright Side
+            </span>
+          </div>
           <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
             Flip every forecast into a reason to smile
           </h1>
