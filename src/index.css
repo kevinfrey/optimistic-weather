@@ -68,12 +68,3 @@
     background-attachment: fixed;
   }
 }
-
-@layer components {
-  .tagline-80s {
-    @apply text-2xl font-medium text-slate-900 sm:text-3xl;
-    font-family: 'Futura', 'Century Gothic', 'Montserrat', 'Avenir Next', sans-serif;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-}
