@@ -86,10 +86,44 @@ const geocode = async (query: string): Promise<GeoLocation[]> => {
   return fetchJson<GeoLocation[]>(url)
 }
 
+const ZIP_QUERY_REGEX = /^([A-Za-z0-9-]{3,10})(?:\s*,\s*([A-Za-z]{2}))?$/
+
+const geocodeByZip = async (zip: string, country: string): Promise<GeoLocation | null> => {
+  const apiKey = assertApiKey()
+  const encodedZip = encodeURIComponent(`${zip},${country}`)
+  const url = `${API_BASE}/geo/1.0/zip?zip=${encodedZip}&appid=${apiKey}`
+  try {
+    const result = await fetchJson<{
+      zip: string
+      name: string
+      lat: number
+      lon: number
+      country: string
+    }>(url)
+    return {
+      name: result.name,
+      lat: result.lat,
+      lon: result.lon,
+      country: result.country,
+    }
+  } catch {
+    return null
+  }
+}
+
 export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   const trimmedQuery = query.trim()
   if (!trimmedQuery) {
     throw new Error('Enter a location to search for a forecast.')
+  }
+
+  const zipCandidate = ZIP_QUERY_REGEX.exec(trimmedQuery)
+  if (zipCandidate) {
+    const [, zip, country] = zipCandidate
+    const zipResult = await geocodeByZip(zip, (country ?? 'US').toUpperCase())
+    if (zipResult) {
+      return zipResult
+    }
   }
 
   const primaryResults = await geocode(trimmedQuery)
