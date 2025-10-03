@@ -80,3 +80,12 @@ export interface OptimisticForecast {
   skySummary: string
   highlights: OptimisticHighlight[]
 }
+
+export interface SearchHistoryEntry {
+  id: string
+  query: string
+  timestamp: number
+  success: boolean
+  locationLabel?: string
+  errorMessage?: string
+}

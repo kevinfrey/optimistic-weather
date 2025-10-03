@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,9 +12,11 @@ import {
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { fetchOptimisticForecast } from '@/services/openWeather'
-import type { OptimisticForecast } from '@/types/weather'
+import type { OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
 
 type Units = 'metric' | 'imperial'
+const HISTORY_STORAGE_KEY = 'optimistic-weather-history-v1'
+const HISTORY_LIMIT = 8
 
 const formatTemperature = (value: number, units: Units) => {
   const rounded = Math.round(value)
@@ -28,6 +30,51 @@ const formatTime = (date: Date) =>
     minute: '2-digit',
   })
 
+const formatRelativeTime = (timestamp: number) => {
+  const diffMs = Date.now() - timestamp
+  const diffMinutes = Math.round(diffMs / 60000)
+  if (diffMinutes < 1) {
+    return 'just now'
+  }
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`
+  }
+  const diffHours = Math.round(diffMinutes / 60)
+  if (diffHours < 24) {
+    return `${diffHours}h ago`
+  }
+  const diffDays = Math.round(diffHours / 24)
+  return `${diffDays}d ago`
+}
+
+const loadHistory = (): SearchHistoryEntry[] => {
+  if (typeof window === 'undefined') {
+    return []
+  }
+  try {
+    const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+    if (!stored) {
+      return []
+    }
+    const parsed = JSON.parse(stored) as SearchHistoryEntry[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch (err) {
+    console.warn('Unable to load search history from storage.', err)
+    return []
+  }
+}
+
+const persistHistory = (entries: SearchHistoryEntry[]) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries))
+  } catch (err) {
+    console.warn('Unable to persist search history.', err)
+  }
+}
+
 function App() {
   const [query, setQuery] = useState('')
   const [units, setUnits] = useState<Units>('imperial')
@@ -35,6 +82,20 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastQuery, setLastQuery] = useState<string | null>(null)
+  const [history, setHistory] = useState<SearchHistoryEntry[]>(() => loadHistory())
+
+  useEffect(() => {
+    persistHistory(history)
+  }, [history])
+
+  const recordHistory = (entry: Omit<SearchHistoryEntry, 'id'>) => {
+    const id = crypto?.randomUUID ? crypto.randomUUID() : `hist-${Date.now()}`
+    setHistory((prev) => {
+      const filtered = prev.filter((item) => item.query.toLowerCase() !== entry.query.toLowerCase())
+      const nextEntries = [{ ...entry, id }, ...filtered]
+      return nextEntries.slice(0, HISTORY_LIMIT)
+    })
+  }
 
   const runSearch = async (searchQuery: string, requestedUnits: Units) => {
     setLoading(true)
@@ -44,10 +105,22 @@ function App() {
       const data = await fetchOptimisticForecast(searchQuery, requestedUnits)
       setForecast(data)
       setLastQuery(searchQuery)
+      recordHistory({
+        query: searchQuery,
+        success: true,
+        timestamp: Date.now(),
+        locationLabel: data.locationLabel,
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load the forecast right now.'
       setError(message)
       setForecast(null)
+      recordHistory({
+        query: searchQuery,
+        success: false,
+        timestamp: Date.now(),
+        errorMessage: message,
+      })
     } finally {
       setLoading(false)
     }
@@ -75,6 +148,11 @@ function App() {
   const handleQuickPick = (preset: string) => {
     setQuery(preset)
     void runSearch(preset, units)
+  }
+
+  const handleHistorySelect = (entry: SearchHistoryEntry) => {
+    setQuery(entry.query)
+    void runSearch(entry.query, units)
   }
 
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
@@ -180,6 +258,44 @@ function App() {
 
           </CardContent>
         </Card>
+
+        {history.length > 0 && (
+          <Card className="border-slate-200/70 bg-white/85 shadow-lg backdrop-blur-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-xl font-semibold text-slate-900">Recent searches</CardTitle>
+              <CardDescription className="text-slate-600">
+                Tap a location to instantly replay its optimistic outlook.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-slate-200">
+                {history.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-semibold text-slate-900">
+                        {entry.success ? entry.locationLabel ?? entry.query : entry.query}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {entry.success ? 'Bright side locked in' : entry.errorMessage ?? 'No forecast found'} ·
+                        {' '}
+                        {formatRelativeTime(entry.timestamp)}
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-w-[88px]"
+                      onClick={() => handleHistorySelect(entry)}
+                      disabled={loading}
+                    >
+                      Re-run
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {error && (
           <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">

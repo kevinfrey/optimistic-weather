@@ -25,15 +25,87 @@ const fetchJson = async <T>(url: string): Promise<T> => {
   return response.json() as Promise<T>
 }
 
-export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
+const levenshteinDistance = (a: string, b: string): number => {
+  const lenA = a.length
+  const lenB = b.length
+  const dp: number[][] = []
+
+  for (let i = 0; i <= lenA; i += 1) {
+    dp[i] = []
+    for (let j = 0; j <= lenB; j += 1) {
+      dp[i][j] = 0
+    }
+  }
+
+  for (let i = 0; i <= lenA; i += 1) {
+    dp[i][0] = i
+  }
+  for (let j = 0; j <= lenB; j += 1) {
+    dp[0][j] = j
+  }
+
+  for (let i = 1; i <= lenA; i += 1) {
+    for (let j = 1; j <= lenB; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost,
+      )
+    }
+  }
+
+  return dp[lenA][lenB]
+}
+
+const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | null => {
+  if (!options.length) {
+    return null
+  }
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const scored: { option: GeoLocation; distance: number }[] = options.map((option) => {
+    const locationLabelParts = [option.name]
+    if (option.state) {
+      locationLabelParts.push(option.state)
+    }
+    locationLabelParts.push(option.country)
+    const label = locationLabelParts.join(', ').toLowerCase()
+    const distance = levenshteinDistance(normalizedQuery, label)
+    return { option, distance }
+  })
+
+  scored.sort((a, b) => a.distance - b.distance)
+  return scored[0]?.option ?? null
+}
+
+const geocode = async (query: string): Promise<GeoLocation[]> => {
   const apiKey = assertApiKey()
   const encodedQuery = encodeURIComponent(query.trim())
-  const url = `${API_BASE}/geo/1.0/direct?q=${encodedQuery}&limit=1&appid=${apiKey}`
-  const results = await fetchJson<GeoLocation[]>(url)
-  if (!results.length) {
-    throw new Error(`Could not find a place called "${query}". Try a city, state/country combo.`)
+  const url = `${API_BASE}/geo/1.0/direct?q=${encodedQuery}&limit=5&appid=${apiKey}`
+  return fetchJson<GeoLocation[]>(url)
+}
+
+export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
+  const trimmedQuery = query.trim()
+  if (!trimmedQuery) {
+    throw new Error('Enter a location to search for a forecast.')
   }
-  return results[0]
+
+  const primaryResults = await geocode(trimmedQuery)
+  let match = pickBestMatch(trimmedQuery, primaryResults)
+
+  if (!match && trimmedQuery.includes(',')) {
+    const [cityOnly] = trimmedQuery.split(',')
+    const fallbackResults = await geocode(cityOnly)
+    match = pickBestMatch(cityOnly, fallbackResults)
+  }
+
+  if (!match) {
+    throw new Error(`Could not find a place that matches "${query}". Double-check the spelling or try nearby cities.`)
+  }
+
+  return match
 }
 
 const fetchForecast = async (

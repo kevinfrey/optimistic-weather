@@ -7,6 +7,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 - **Segmented unit toggle** – Instant Fahrenheit/Celsius switch with optimistic copy preserved across units.
 - **shadcn/ui styling** – Tailwind CSS design tokens and components deliver a polished, glassmorphism-inspired layout.
 - **Resilient UX** – Friendly error states when locations fail lookup, quick-pick suggestions, and loading feedback.
+- **Smart search history** – Recent lookups persist locally so you can replay bright-side forecasts in a single click, including errored attempts for quick retries.
 
 ## Requirements
 - Node.js 20+
@@ -26,7 +27,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
    ```sh
    npm run dev
    ```
-   Vite prints a local URL—open it in your browser to explore the optimistic outlooks.
+   Vite prints a local URL—open it in your browser to explore the optimistic outlooks. Your recent searches are saved locally, so returning visitors can replay them instantly.
 
 ## Scripts
 | Command | Description |
