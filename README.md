@@ -38,6 +38,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 | `npm run build` | Type-check and produce a production build under `dist/`. |
 | `npm run preview` | Serve the built assets locally for a production sanity check. |
 | `npm run lint` | Run ESLint with type-aware rules using your local TypeScript project. |
+| `npm run test` | Execute Vitest unit tests (fuzzy geocoder + history storage helpers). |
 
 ## Linting & Code Quality
 - ESLint is configured with `typescript-eslint`’s type-aware presets plus stylistic rules. The project is linted against the actual TypeScript program, so editor diagnostics match CI.

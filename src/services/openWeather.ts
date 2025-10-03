@@ -142,6 +142,13 @@ export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   return match
 }
 
+export const __internal = {
+  levenshteinDistance,
+  pickBestMatch,
+  geocodeByZip,
+  ZIP_QUERY_REGEX,
+}
+
 const fetchForecast = async (
   lat: number,
   lon: number,

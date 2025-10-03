@@ -14,9 +14,14 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { fetchOptimisticForecast } from '@/services/openWeather'
 import type { OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
 import { debounce } from '@/lib/utils'
+import {
+  clearHistoryEntries,
+  loadHistoryEntries,
+  persistHistoryEntries,
+} from '@/lib/history-storage'
 
 type Units = 'metric' | 'imperial'
-const HISTORY_STORAGE_KEY = 'optimistic-weather-history-v1'
+const UNIT_STORAGE_KEY = 'optimistic-weather-units-v1'
 const HISTORY_LIMIT = 8
 
 const formatTemperature = (value: number, units: Units) => {
@@ -48,47 +53,32 @@ const formatRelativeTime = (timestamp: number) => {
   return `${diffDays}d ago`
 }
 
-const loadHistory = (): SearchHistoryEntry[] => {
-  if (typeof window === 'undefined') {
-    return []
-  }
-  try {
-    const stored = window.localStorage.getItem(HISTORY_STORAGE_KEY)
-    if (!stored) {
-      return []
-    }
-    const parsed = JSON.parse(stored) as SearchHistoryEntry[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch (err) {
-    console.warn('Unable to load search history from storage.', err)
-    return []
-  }
-}
-
-const persistHistory = (entries: SearchHistoryEntry[]) => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  try {
-    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(entries))
-  } catch (err) {
-    console.warn('Unable to persist search history.', err)
-  }
-}
-
 function App() {
   const [query, setQuery] = useState('')
-  const [units, setUnits] = useState<Units>('imperial')
+  const [units, setUnits] = useState<Units>(() => {
+    if (typeof window === 'undefined') {
+      return 'imperial'
+    }
+    const stored = window.localStorage.getItem(UNIT_STORAGE_KEY)
+    return stored === 'metric' || stored === 'imperial' ? stored : 'imperial'
+  })
   const [forecast, setForecast] = useState<OptimisticForecast | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastQuery, setLastQuery] = useState<string | null>(null)
-  const [history, setHistory] = useState<SearchHistoryEntry[]>(() => loadHistory())
+  const [history, setHistory] = useState<SearchHistoryEntry[]>(() => loadHistoryEntries())
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false)
 
   useEffect(() => {
-    persistHistory(history)
+    persistHistoryEntries(history)
   }, [history])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    window.localStorage.setItem(UNIT_STORAGE_KEY, units)
+  }, [units])
 
   const recordHistory = (entry: Omit<SearchHistoryEntry, 'id'>) => {
     const id = crypto?.randomUUID ? crypto.randomUUID() : `hist-${Date.now()}`
@@ -163,6 +153,7 @@ function App() {
 
   const handleHistoryClear = () => {
     setHistory([])
+    clearHistoryEntries()
   }
 
   const debouncedRunSearch = debounce((values: { q: string; u: Units }) => {
