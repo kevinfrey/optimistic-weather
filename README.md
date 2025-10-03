@@ -9,6 +9,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 - **Resilient UX** – Friendly error states when locations fail lookup, quick-pick suggestions, and loading feedback.
 - **Smart search history** – Recent lookups persist locally so you can replay bright-side forecasts in a single click, including errored attempts for quick retries.
 - **Zip code friendly** – Recognises common postal-code formats (e.g. `94103` or `W1A,GB`) and maps them to the right place automatically.
+- **Responsive experience** – Mobile-first layout, collapsible history actions, and careful spacing keep the UI welcoming on any screen size.
 
 ## Requirements
 - Node.js 20+
@@ -49,7 +50,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 - **Lucide Icons** available for future optimistic iconography.
 
 ## API Notes
-- Forecast requests call `fetchOptimisticForecast` in `src/services/openWeather.ts`, which performs geocoding then constructs highlights from the first ~24 hours of data.
+- Forecast requests call `fetchOptimisticForecast` in `src/services/openWeather.ts`, which performs geocoding (with fuzzy matching + postal lookups) then constructs highlights from the first ~24 hours of data.
 - The app surfaces error details when the API returns 4xx/5xx responses, so you can see authentication or location issues instantly.
 - To avoid rate limits in production, consider caching responses or throttling repeated lookups.
 

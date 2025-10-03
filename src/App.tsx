@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { fetchOptimisticForecast } from '@/services/openWeather'
 import type { OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
+import { debounce } from '@/lib/utils'
 
 type Units = 'metric' | 'imperial'
 const HISTORY_STORAGE_KEY = 'optimistic-weather-history-v1'
@@ -83,6 +84,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [lastQuery, setLastQuery] = useState<string | null>(null)
   const [history, setHistory] = useState<SearchHistoryEntry[]>(() => loadHistory())
+  const [historyMenuOpen, setHistoryMenuOpen] = useState(false)
 
   useEffect(() => {
     persistHistory(history)
@@ -155,6 +157,18 @@ function App() {
     void runSearch(entry.query, units)
   }
 
+  const handleHistoryDelete = (id: string) => {
+    setHistory((prev) => prev.filter((entry) => entry.id !== id))
+  }
+
+  const handleHistoryClear = () => {
+    setHistory([])
+  }
+
+  const debouncedRunSearch = debounce((values: { q: string; u: Units }) => {
+    void runSearch(values.q, values.u)
+  }, 400)
+
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
 
   return (
@@ -190,7 +204,13 @@ function App() {
                   type="text"
                   placeholder="e.g. Seattle, WA or 94103"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    if (event.target.value.trim().length >= 3) {
+                      debouncedRunSearch.cancel()
+                      debouncedRunSearch({ q: event.target.value, u: units })
+                    }
+                  }}
                   autoComplete="off"
                 />
               </div>
@@ -227,33 +247,18 @@ function App() {
 
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
               <span className="font-semibold text-slate-700">Need inspiration?</span>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickPick('Lisbon, Portugal')}
-                disabled={loading}
-              >
-                Lisbon
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickPick('Sydney, Australia')}
-                disabled={loading}
-              >
-                Sydney
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleQuickPick('Seattle, WA')}
-                disabled={loading}
-              >
-                Seattle
-              </Button>
+              {['Lisbon, Portugal', 'Sydney, Australia', 'Seattle, WA'].map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleQuickPick(preset)}
+                  disabled={loading}
+                >
+                  {preset.split(',')[0]}
+                </Button>
+              ))}
             </div>
 
           </CardContent>
@@ -261,17 +266,35 @@ function App() {
 
         {history.length > 0 && (
           <Card className="border-slate-200/70 bg-white/85 shadow-lg backdrop-blur-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-xl font-semibold text-slate-900">Recent searches</CardTitle>
-              <CardDescription className="text-slate-600">
-                Tap a location to instantly replay its optimistic outlook.
-              </CardDescription>
+            <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-xl font-semibold text-slate-900">Recent searches</CardTitle>
+                <CardDescription className="text-slate-600">
+                  Tap a location to instantly replay its optimistic outlook.
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500"
+                  onClick={() => setHistoryMenuOpen((open) => !open)}
+                >
+                  Manage
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleHistoryClear} disabled={!history.length}>
+                  Clear all
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <ul className="divide-y divide-slate-200">
                 {history.map((entry) => (
-                  <li key={entry.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="flex flex-col">
+                  <li
+                    key={entry.id}
+                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex flex-col sm:max-w-md">
                       <span className="text-sm font-semibold text-slate-900">
                         {entry.success ? entry.locationLabel ?? entry.query : entry.query}
                       </span>
@@ -281,15 +304,27 @@ function App() {
                         {formatRelativeTime(entry.timestamp)}
                       </span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="min-w-[88px]"
-                      onClick={() => handleHistorySelect(entry)}
-                      disabled={loading}
-                    >
-                      Re-run
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-w-[88px]"
+                        onClick={() => handleHistorySelect(entry)}
+                        disabled={loading}
+                      >
+                        Re-run
+                      </Button>
+                      {historyMenuOpen && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-600"
+                          onClick={() => handleHistoryDelete(entry.id)}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
