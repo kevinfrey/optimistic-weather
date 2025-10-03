@@ -68,3 +68,20 @@
     background-attachment: fixed;
   }
 }
+
+@layer components {
+  .tagline-80s {
+    @apply text-2xl font-semibold sm:text-3xl;
+    font-family: 'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive;
+    letter-spacing: 0.12em;
+    text-transform: none;
+    color: #fef08a;
+    background-image: linear-gradient(90deg, #ff9fd6, #ffe066 50%, #7afcff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow:
+      0 0 12px rgba(255, 159, 214, 0.4),
+      0 0 24px rgba(255, 224, 102, 0.35);
+  }
+}

@@ -245,7 +245,7 @@ function App() {
               </span>
             </span>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-800 sm:text-3xl">
+          <h1 className="tagline-80s mx-auto max-w-xl tracking-tight">
             Flip every forecast into a reason to smile
           </h1>
         </header>
