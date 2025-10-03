@@ -4,6 +4,7 @@ import type {
   GeoLocation,
   OptimisticForecast,
   OptimisticHighlight,
+  Coordinates,
 } from '../types/weather'
 
 const API_BASE = 'https://api.openweathermap.org'
@@ -87,6 +88,16 @@ const geocode = async (query: string): Promise<GeoLocation[]> => {
 }
 
 const ZIP_QUERY_REGEX = /^([A-Za-z0-9-]{3,10})(?:\s*,\s*([A-Za-z]{2}))?$/
+
+export const reverseGeocode = async ({ lat, lon }: Coordinates): Promise<GeoLocation> => {
+  const apiKey = assertApiKey()
+  const url = `${API_BASE}/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${apiKey}`
+  const results = await fetchJson<GeoLocation[]>(url)
+  if (!results.length) {
+    throw new Error('Unable to determine your current city from coordinates. Try searching manually.')
+  }
+  return results[0]
+}
 
 const geocodeByZip = async (zip: string, country: string): Promise<GeoLocation | null> => {
   const apiKey = assertApiKey()

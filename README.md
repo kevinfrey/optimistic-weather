@@ -11,6 +11,7 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 - **Zip code friendly** – Recognises common postal-code formats (e.g. `94103` or `W1A,GB`) and maps them to the right place automatically.
 - **Responsive experience** – Mobile-first layout, collapsible history actions, and careful spacing keep the UI welcoming on any screen size.
 - **Transparent optimism** – Every highlight shows the underlying metric (rain chance, wind speed, visibility) so users see the facts behind the flip.
+- **One-tap local forecast** – Grant location permission to instantly load the optimistic outlook for wherever you’re standing.
 
 ## Requirements
 - Node.js 20+

@@ -83,6 +83,11 @@ export interface OptimisticForecast {
   highlights: OptimisticHighlight[]
 }
 
+export interface Coordinates {
+  lat: number
+  lon: number
+}
+
 export interface SearchHistoryEntry {
   id: string
   query: string

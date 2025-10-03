@@ -11,14 +11,14 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { fetchOptimisticForecast } from '@/services/openWeather'
-import type { OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
+import { fetchOptimisticForecast, reverseGeocode } from '@/services/openWeather'
+import type { Coordinates, OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
 import {
   clearHistoryEntries,
   loadHistoryEntries,
   persistHistoryEntries,
 } from '@/lib/history-storage'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Navigation } from 'lucide-react'
 
 type Units = 'metric' | 'imperial'
 const UNIT_STORAGE_KEY = 'optimistic-weather-units-v1'
@@ -68,6 +68,8 @@ function App() {
   const [lastQuery, setLastQuery] = useState<string | null>(null)
   const [history, setHistory] = useState<SearchHistoryEntry[]>(() => loadHistoryEntries())
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false)
+  const [geoSupported] = useState(() => typeof navigator !== 'undefined' && !!navigator.geolocation)
+  const [geoError, setGeoError] = useState<string | null>(null)
 
   useEffect(() => {
     persistHistoryEntries(history)
@@ -156,6 +158,79 @@ function App() {
     clearHistoryEntries()
   }
 
+  const errorMessage = error ?? geoError
+
+  const runCoordsSearch = async (coords: Coordinates, labelHint?: string) => {
+    setLoading(true)
+    setError(null)
+    setGeoError(null)
+
+    try {
+      const place = await reverseGeocode(coords)
+      const labelParts = [place.name]
+      if (place.state) {
+        labelParts.push(place.state)
+      }
+      labelParts.push(place.country)
+      const queryLabel = labelHint ?? labelParts.join(', ')
+
+      const data = await fetchOptimisticForecast(queryLabel, units)
+      setForecast(data)
+      setLastQuery(queryLabel)
+      recordHistory({
+        query: queryLabel,
+        success: true,
+        timestamp: Date.now(),
+        locationLabel: data.locationLabel,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'We could not load your local forecast.'
+      setError(message)
+      setGeoError(message)
+      setForecast(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUseLocation = () => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported in this browser.')
+      return
+    }
+
+    setLoading(true)
+    setGeoError(null)
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        void runCoordsSearch({ lat: latitude, lon: longitude })
+      },
+      (geoErr) => {
+        setLoading(false)
+        switch (geoErr.code) {
+          case geoErr.PERMISSION_DENIED:
+            setGeoError('Permission denied. You can still search manually for any city or zip.')
+            break
+          case geoErr.POSITION_UNAVAILABLE:
+            setGeoError('Location unavailable right now. Try again soon or search manually.')
+            break
+          case geoErr.TIMEOUT:
+            setGeoError('Location lookup timed out. Try again or search manually.')
+            break
+          default:
+            setGeoError('Unable to determine your location.')
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        maximumAge: 1000 * 60 * 5,
+        timeout: 1000 * 10,
+      },
+    )
+  }
+
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
 
   return (
@@ -198,22 +273,34 @@ function App() {
                 />
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" disabled={loading}>
-                  {loading ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                      Curating optimism…
-                    </span>
-                  ) : (
-                    'Reveal the bright side'
-                  )}
-                </Button>
-                <ToggleGroup
-                  type="single"
-                  value={units}
-                  onValueChange={handleUnitsSelect}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Curating optimism…
+                  </span>
+                ) : (
+                  'Reveal the bright side'
+                )}
+              </Button>
+              {geoSupported && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleUseLocation}
                   disabled={loading}
+                  className="flex items-center gap-2"
+                >
+                  <Navigation className="h-4 w-4" aria-hidden />
+                  Use my location
+                </Button>
+              )}
+              <ToggleGroup
+                type="single"
+                value={units}
+                onValueChange={handleUnitsSelect}
+                disabled={loading}
                   className="rounded-full border border-slate-200 bg-slate-100/60 p-1 text-sm shadow-inner"
                   aria-label="Select temperature units"
                 >
@@ -322,9 +409,9 @@ function App() {
           </Card>
         )}
 
-        {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
-            {error}
+        {errorMessage && (
+          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
+            {errorMessage}
           </div>
         )}
         {loading && !forecast && (
