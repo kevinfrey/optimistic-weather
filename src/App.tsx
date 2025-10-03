@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { fetchOptimisticForecast } from '@/services/openWeather'
 import type { OptimisticForecast, SearchHistoryEntry } from '@/types/weather'
-import { debounce } from '@/lib/utils'
 import {
   clearHistoryEntries,
   loadHistoryEntries,
@@ -156,10 +155,6 @@ function App() {
     clearHistoryEntries()
   }
 
-  const debouncedRunSearch = debounce((values: { q: string; u: Units }) => {
-    void runSearch(values.q, values.u)
-  }, 400)
-
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
 
   return (
@@ -195,13 +190,7 @@ function App() {
                   type="text"
                   placeholder="e.g. Seattle, WA or 94103"
                   value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value)
-                    if (event.target.value.trim().length >= 3) {
-                      debouncedRunSearch.cancel()
-                      debouncedRunSearch({ q: event.target.value, u: units })
-                    }
-                  }}
+                  onChange={(event) => setQuery(event.target.value)}
                   autoComplete="off"
                 />
               </div>
