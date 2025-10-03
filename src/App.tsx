@@ -18,6 +18,7 @@ import {
   loadHistoryEntries,
   persistHistoryEntries,
 } from '@/lib/history-storage'
+import { Loader2 } from 'lucide-react'
 
 type Units = 'metric' | 'imperial'
 const UNIT_STORAGE_KEY = 'optimistic-weather-units-v1'
@@ -197,7 +198,14 @@ function App() {
 
               <div className="flex flex-wrap items-center gap-3">
                 <Button type="submit" disabled={loading}>
-                  {loading ? 'Curating optimism…' : 'Reveal the bright side'}
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      Curating optimism…
+                    </span>
+                  ) : (
+                    'Reveal the bright side'
+                  )}
                 </Button>
                 <ToggleGroup
                   type="single"
@@ -318,7 +326,8 @@ function App() {
           </div>
         )}
         {loading && !forecast && (
-          <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm font-medium text-sky-700 shadow-sm">
+          <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 text-sm font-medium text-sky-700 shadow-sm">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Gathering your optimistic outlook…
           </div>
         )}
