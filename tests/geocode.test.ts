@@ -7,10 +7,31 @@ const sampleOptions: GeoLocation[] = [
   { name: 'Centerville', lat: 39.628, lon: -84.159, state: 'OH', country: 'US' },
 ]
 
+const sydneyOptions: GeoLocation[] = [
+  { name: 'Sydney', lat: -33.8688, lon: 151.2093, state: 'New South Wales', country: 'AU' },
+  { name: 'Sydney', lat: 46.1368, lon: -60.1942, state: 'Nova Scotia', country: 'CA' },
+]
+
+const seattleOptions: GeoLocation[] = [
+  { name: 'Seattle', lat: 47.6062, lon: -122.3321, state: 'Washington', country: 'US' },
+  { name: 'Seattle', lat: 21.1743, lon: -104.833, state: 'Jalisco', country: 'MX' },
+]
+
 describe('geocoding helpers', () => {
   it('selects the closest matching location label for misspelled queries', () => {
     const match = __internal.pickBestMatch('Cincinatti, OH, US', sampleOptions)
     expect(match?.name).toBe('Cincinnati')
+  })
+
+  it('prioritises country matches when the query names a country', () => {
+    const match = __internal.pickBestMatch('Sydney, Australia', sydneyOptions)
+    expect(match?.country).toBe('AU')
+  })
+
+  it('accounts for US state hints when differentiating same-name cities', () => {
+    const match = __internal.pickBestMatch('Seattle, WA', seattleOptions)
+    expect(match?.state).toBe('Washington')
+    expect(match?.country).toBe('US')
   })
 
   it('treats perfect matches as zero distance', () => {

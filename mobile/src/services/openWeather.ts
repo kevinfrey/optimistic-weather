@@ -72,9 +72,9 @@ const US_STATE_NAME_TO_CODE = new Map<string, string>(
 )
 
 const assertApiKey = () => {
-  const key = import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined
+  const key = process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY as string | undefined
   if (!key) {
-    throw new Error('Missing OpenWeather API key. Add VITE_OPENWEATHER_API_KEY to your environment.')
+    throw new Error('Missing OpenWeather API key. Set EXPO_PUBLIC_OPENWEATHER_API_KEY in your app config.')
   }
   return key
 }
@@ -315,8 +315,6 @@ const average = (values: number[]) => {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
-const toMiles = (meters: number) => meters / 1609.34
-const toKilometers = (meters: number) => meters / 1000
 const metersPerSecondToKph = (mps: number) => mps * 3.6
 
 const buildSkySummary = (entry: ForecastEntry): string => {
@@ -337,268 +335,149 @@ const buildSkySummary = (entry: ForecastEntry): string => {
     case 'Thunderstorm':
       return 'Electric skies bring drama—front-row seats from indoors highly encouraged.'
     case 'Snow':
-      return 'Fresh flakes incoming—ideal backdrop for quiet walks and winter photos.'
+      return 'Fresh flurries dial up the magic—perfect for cocoa refills.'
     case 'Mist':
     case 'Fog':
-    case 'Haze':
-      return 'Dreamy mist sets the scene—time to embrace the cinematic atmosphere.'
+      return 'Hazy horizons invite slow moments and calm playlists.'
     default:
-      return 'Atmosphere is mixing things up—a great day to follow your curiosity.'
+      return 'Skies shifting with a friendly mix—embrace the surprises.'
   }
 }
 
-const craftHighlights = (
-  horizon: ForecastEntry[],
+const buildHighlights = (
+  entries: ForecastEntry[],
   units: 'metric' | 'imperial',
-  timezoneOffsetSeconds: number,
 ): OptimisticHighlight[] => {
-  if (!horizon.length) {
+  if (!entries.length) {
     return []
   }
 
-  const normalizedPopValues = horizon.map((entry) => {
-    const value = entry.pop ?? 0
-    if (Number.isNaN(value)) {
-      return 0
-    }
-    return Math.min(Math.max(value, 0), 1)
-  })
+  const midday = entries[Math.min(4, entries.length - 1)]
+  const evening = entries[Math.min(8, entries.length - 1)]
 
-  const popsWithData = horizon
-    .map((entry) => entry.pop)
-    .filter((pop): pop is number => typeof pop === 'number' && !Number.isNaN(pop))
+  const humidities = entries.map((entry) => entry.main.humidity)
+  const averageHumidity = Math.round(average(humidities))
 
-  const wetBlocks = horizon.filter((entry) => {
-    const precipitationVolume = (entry.rain?.['3h'] ?? 0) + (entry.snow?.['3h'] ?? 0)
-    const wetWeather = entry.weather.some((condition) =>
-      ['Rain', 'Drizzle', 'Thunderstorm', 'Snow'].includes(condition.main),
-    )
-    const highPop = (entry.pop ?? 0) >= 0.4
-    return precipitationVolume > 0 || wetWeather || highPop
-  }).length
+  const windSpeeds = entries.map((entry) => entry.wind.speed)
+  const averageWind = average(windSpeeds)
 
-  const avgPopValue = normalizedPopValues.length ? average(normalizedPopValues) : 0
-  let drynessRatio = 1 - avgPopValue
-  const wetPenalty = 1 - wetBlocks / horizon.length
-  drynessRatio = Math.min(drynessRatio, wetPenalty)
-  drynessRatio = Math.max(0, Math.min(1, drynessRatio))
-  const avgDryness = Math.round(drynessRatio * 100)
-  const rainChancePercent = Math.round((1 - drynessRatio) * 100)
-  const first = horizon[0]
+  const visibilityValues = entries.map((entry) => entry.visibility)
+  const averageVisibility = average(visibilityValues)
 
-  const cloudOpenings = Math.round(average(horizon.map((entry) => 100 - (entry.clouds?.all ?? 0))))
-  const avgCloudCover = Math.round(average(horizon.map((entry) => entry.clouds?.all ?? 0)))
-  const humidity = first.main.humidity
-  const feelsGap = first.main.feels_like - first.main.temp
-  const visibilityMeters = first.visibility
-  const windSpeed = first.wind.speed
-  const gust = first.wind.gust
+  const chanceOfRain = Math.max(...entries.map((entry) => entry.pop ?? 0)) * 100
+  const roundedRainChance = Math.round(chanceOfRain)
+  const dryWindowPercent = Math.max(0, 100 - roundedRainChance)
 
-  const isMetric = units === 'metric'
-  const visibilityValue = isMetric ? toKilometers(visibilityMeters) : toMiles(visibilityMeters)
-  const visibilityUnits = isMetric ? 'km' : 'mi'
-  const windValue = isMetric ? metersPerSecondToKph(windSpeed) : windSpeed
-  const windUnits = isMetric ? 'km/h' : 'mph'
-  const gustValue = gust ? (isMetric ? metersPerSecondToKph(gust) : gust) : undefined
-  const unitsSuffix = units === 'metric' ? '°C' : '°F'
-  const feelsOffset = Math.round(feelsGap)
-  const feelsOffsetDisplay = `${Math.abs(feelsOffset)}${unitsSuffix}`
-  const feelsSignedDisplay = feelsOffset === 0
-    ? `0${unitsSuffix}`
-    : `${feelsOffset > 0 ? '+' : ''}${feelsOffset}${unitsSuffix}`
+  const visibilityText = units === 'imperial'
+    ? `${averageVisibility > 16093 ? '10+' : (averageVisibility / 1609.34).toFixed(1)} mi`
+    : `${averageVisibility > 10000 ? '10+' : (averageVisibility / 1000).toFixed(1)} km`
 
-  const highlights: OptimisticHighlight[] = []
+  const windText = units === 'imperial'
+    ? `${(averageWind * 2.237).toFixed(1)} mph`
+    : `${metersPerSecondToKph(averageWind).toFixed(1)} km/h`
 
-  highlights.push(
-    avgDryness >= 55
-      ? {
-          id: 'dryness',
-          title: 'Dry Skies Bias',
-          takeaway: `${avgDryness}% odds you stay splash-free.`,
-          detail: avgDryness === 100
-            ? 'Skies look bone-dry—perfect excuse to plan something outside.'
-            : 'Still, a pocket umbrella doubles as a sunshade—win-win.',
-          heroStatValue: `${avgDryness}%`,
-          heroStatLabel: 'Dry skies odds',
-          metricLabel: 'Rain chance',
-          metricValue: `${rainChancePercent}%`,
-        }
-      : {
-          id: 'refresh',
-          title: 'Sky Refills Incoming',
-          takeaway: `${avgDryness}% dry-window potential between the refills.`,
-          detail: popsWithData.length
-            ? `Rain chances near ${rainChancePercent}% mean the plants win—use the ${avgDryness}% dry breaks for fresh air or errand dashes.`
-            : 'Radar hints at on-and-off showers—embrace indoor cozy time and watch for quick clearing moments.',
-          heroStatValue: `${avgDryness}%`,
-          heroStatLabel: 'Dry window odds',
-          metricLabel: 'Rain chance',
-          metricValue: `${rainChancePercent}%`,
-        },
-  )
-
-  highlights.push({
-    id: 'clouds',
-    title: 'Blue-Sky Windows',
-    takeaway: `${cloudOpenings}% of the next stretch features blue-sky cameos.`,
-    detail: 'Great lighting for photos and quick outdoor breaks.',
-    heroStatValue: `${cloudOpenings}%`,
-    heroStatLabel: 'Blue-sky share',
-    metricLabel: 'Avg cloud cover',
-    metricValue: `${avgCloudCover}%`,
-  })
-
-  if (Math.abs(feelsGap) <= 1.5) {
-    highlights.push({
-      id: 'feels-like',
-      title: 'Comfort Index',
-      takeaway: 'Feels-like temps match the actual read—no wardrobe curveballs.',
-      heroStatValue: feelsOffsetDisplay,
-      heroStatLabel: 'Feels diff',
-      metricLabel: 'Feels difference',
-      metricValue: feelsSignedDisplay,
-    })
-  } else if (feelsGap < 0) {
-    highlights.push({
-      id: 'cooler',
-      title: 'Built-In Breeze',
-      takeaway: `Feels about ${Math.abs(feelsOffset)}° cooler than the thermometer—prime for active plans.`,
-      heroStatValue: feelsOffsetDisplay,
-      heroStatLabel: 'Feels cooler',
-      metricLabel: 'Feels difference',
-      metricValue: feelsSignedDisplay,
-    })
-  } else {
-    highlights.push({
-      id: 'warmer',
-      title: 'Cozy Warmth',
-      takeaway: `Feels around ${feelsOffset}° warmer—nature's heated blanket.`,
-      heroStatValue: feelsOffsetDisplay,
-      heroStatLabel: 'Feels warmer',
-      metricLabel: 'Feels difference',
-      metricValue: feelsSignedDisplay,
-    })
-  }
-
-  if (humidity <= 60) {
-    highlights.push({
-      id: 'humidity',
-      title: 'Ideal Hair Day',
-      takeaway: `${humidity}% humidity keeps frizz in check and comfort high.`,
-      heroStatValue: `${humidity}%`,
-      heroStatLabel: 'Humidity',
-      metricLabel: 'Humidity',
-      metricValue: `${humidity}%`,
-    })
-  } else {
-    highlights.push({
-      id: 'hydration',
-      title: 'Humidity Bonus',
-      takeaway: `${humidity}% humidity means houseplants and skin stay happily hydrated.`,
-      heroStatValue: `${humidity}%`,
-      heroStatLabel: 'Humidity',
-      metricLabel: 'Humidity',
-      metricValue: `${humidity}%`,
-    })
-  }
-
-  if (visibilityMeters >= 8000) {
-    highlights.push({
-      id: 'visibility',
-      title: 'Long-Range Views',
-      takeaway: `Visibility stretches roughly ${visibilityValue.toFixed(1)} ${visibilityUnits}—panorama time!`,
-      heroStatValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
-      heroStatLabel: 'Visibility',
-      metricLabel: 'Visibility',
-      metricValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
-    })
-  } else {
-    const nextSunset = new Date((horizon[0].dt + timezoneOffsetSeconds) * 1000)
-    highlights.push({
-      id: 'cozy-views',
-      title: 'Cozy Vibes',
-      takeaway: 'Soft-focus air invites slow moments and window-watching.',
-      detail: `Queue up a playlist and enjoy the diffused light toward ${nextSunset.toLocaleTimeString([], {
+  const highlights: OptimisticHighlight[] = [
+    {
+      id: 'sky-window',
+      title: 'Sun break window',
+      takeaway: buildSkySummary(midday),
+      detail: `Sweet spot around ${new Date(midday.dt * 1000).toLocaleTimeString([], {
         hour: 'numeric',
         minute: '2-digit',
       })}.`,
-      heroStatValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
-      heroStatLabel: 'Visibility',
-      metricLabel: 'Visibility',
-      metricValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
-    })
-  }
-
-  const gentleBreezeThreshold = isMetric ? 25 : 15.5
-  const breezy = windValue <= gentleBreezeThreshold
-
-  highlights.push(
-    breezy
-      ? {
-          id: 'breeze',
-          title: 'Friendly Breeze',
-          takeaway: `${windValue.toFixed(1)} ${windUnits} winds keep the air feeling fresh.`,
-          detail: 'Perfect kite or sail training weather.',
-          heroStatValue: `${windValue.toFixed(1)} ${windUnits}`,
-          heroStatLabel: 'Wind speed',
-          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
-          metricValue: gustValue
-            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
-            : `${windValue.toFixed(1)} ${windUnits}`,
-        }
-      : {
-          id: 'wind-energy',
-          title: 'Wind Energy Mode',
-          takeaway: `${windValue.toFixed(1)} ${windUnits} winds—renewable energy fans, rejoice!`,
-          detail: gustValue
-            ? `Gusts near ${gustValue.toFixed(1)} ${windUnits}. Secure loose items then enjoy the drama.`
-            : 'Secure patio furniture, then lean into the dynamic skies.',
-          heroStatValue: `${windValue.toFixed(1)} ${windUnits}`,
-          heroStatLabel: 'Wind speed',
-          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
-          metricValue: gustValue
-            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
-            : `${windValue.toFixed(1)} ${windUnits}`,
-        },
-  )
+      heroStatValue: new Date(midday.dt * 1000).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+      heroStatLabel: 'Next pop of sun',
+    },
+    {
+      id: 'evening-vibes',
+      title: 'Evening vibes',
+      takeaway: buildSkySummary(evening),
+      detail: 'Line up your golden-hour stroll or night-in playlist.',
+      heroStatValue: new Date(evening.dt * 1000).toLocaleTimeString([], {
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+      heroStatLabel: 'Evening outlook',
+    },
+    {
+      id: 'humidity-perk',
+      title: 'Humidity perks',
+      takeaway: averageHumidity < 40
+        ? 'Crisp air keeps everything feeling light.'
+        : 'Moisture in the air keeps skin glowing and plants thrilled.',
+      heroStatValue: `${averageHumidity}%`,
+      heroStatLabel: 'Avg humidity',
+      metricLabel: 'Avg humidity',
+      metricValue: `${averageHumidity}%`,
+    },
+    {
+      id: 'visibility',
+      title: 'Visibility outlook',
+      takeaway: averageVisibility > 8000
+        ? 'Clear views ahead—perfect for scenic detours.'
+        : 'Soft horizon today—lean into indoor comforts.',
+      heroStatValue: visibilityText,
+      heroStatLabel: 'Avg visibility',
+      metricLabel: 'Avg visibility',
+      metricValue: visibilityText,
+    },
+    {
+      id: 'wind',
+      title: 'Comfort breeze',
+      takeaway: averageWind < 3
+        ? 'Barely a breeze—plan the rooftop hangout.'
+        : 'A gentle flow keeps things fresh without hat drama.',
+      heroStatValue: windText,
+      heroStatLabel: 'Avg wind',
+      metricLabel: 'Avg wind',
+      metricValue: windText,
+    },
+    {
+      id: 'chance-of-rain',
+      title: 'Chance of rain',
+      takeaway: dryWindowPercent > 0
+        ? `${dryWindowPercent}% shot to dart outside between refills.`
+        : 'Atmosphere on hydration duty—channel the cozy indoor energy.',
+      heroStatValue: `${dryWindowPercent}%`,
+      heroStatLabel: 'Dry window odds',
+      metricLabel: 'Rain potential',
+      metricValue: `${roundedRainChance}%`,
+    },
+  ]
 
   return highlights
 }
 
 export const fetchOptimisticForecast = async (
   query: string,
-  units: 'metric' | 'imperial' = 'metric',
+  units: 'metric' | 'imperial',
 ): Promise<OptimisticForecast> => {
   const location = await geocodeLocation(query)
   const forecast = await fetchForecast(location.lat, location.lon, units)
-  const horizon = forecast.list.slice(0, 8) // roughly the next 24 hours
-  const first = horizon[0]
-  const temps = horizon.map((entry) => entry.main.temp)
-
-  const temperature = {
-    current: first.main.temp,
-    feelsLike: first.main.feels_like,
-    high: Math.max(...temps),
-    low: Math.min(...temps),
-    units,
-  } as const
-
-  const skySummary = buildSkySummary(first)
-  const highlights = craftHighlights(horizon, units, forecast.city.timezone)
-
-  const locationLabelParts = [location.name]
-  if (location.state) {
-    locationLabelParts.push(location.state)
+  if (!forecast.list.length) {
+    throw new Error('No forecast data available right now. Try again soon!')
   }
-  locationLabelParts.push(location.country)
 
-  const nextUpdateDate = new Date((first.dt + forecast.city.timezone) * 1000)
+  const current = forecast.list[0]
+  const locationLabelParts = [forecast.city.name]
+  if (forecast.city.country) {
+    locationLabelParts.push(forecast.city.country)
+  }
 
   return {
     locationLabel: locationLabelParts.join(', '),
-    nextUpdate: nextUpdateDate,
-    temperature,
-    skySummary,
-    highlights,
+    nextUpdate: new Date(current.dt * 1000 + 1000 * 60 * 60),
+    temperature: {
+      current: current.main.temp,
+      feelsLike: current.main.feels_like,
+      high: Math.max(...forecast.list.slice(0, 8).map((entry) => entry.main.temp_max)),
+      low: Math.min(...forecast.list.slice(0, 8).map((entry) => entry.main.temp_min)),
+      units,
+    },
+    skySummary: buildSkySummary(current),
+    highlights: buildHighlights(forecast.list.slice(0, 12), units),
   }
 }

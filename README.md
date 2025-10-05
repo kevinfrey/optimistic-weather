@@ -62,4 +62,26 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 2. Deploy the `dist/` folder to your hosting provider of choice (Netlify, Vercel, AWS S3 + CloudFront, etc.).
 3. Set `VITE_OPENWEATHER_API_KEY` in your deployment environment—Vite exposes variables prefixed with `VITE_` at runtime.
 
+### Docker
+You can ship the static build behind Nginx with the included Dockerfile. Provide your OpenWeather key at build time so Vite can inline it.
+
+```sh
+docker build \
+  --build-arg VITE_OPENWEATHER_API_KEY=your-key \
+  -t optimistic-weather .
+
+docker run -p 8080:80 optimistic-weather
+```
+
+Open `http://localhost:8080` to verify the container. Rebuild the image whenever you rotate the API key or change application code, since the key is baked into the compiled assets.
+
+## Mobile App (Expo)
+An Expo-managed React Native client lives under `mobile/` for an iOS-first experience that mirrors the web features.
+
+- Install dependencies once: `cd mobile && npm install`.
+- Provide your API key when launching: `EXPO_PUBLIC_OPENWEATHER_API_KEY=your-key npx expo start --ios` (or run `--web`/`--android`).
+- The app reuses the optimistic forecast service, offers quick picks, history management backed by AsyncStorage, and supports location lookups via the `expo-location` permission flow.
+
+When building for the App Store, add the `NSLocationWhenInUseUsageDescription` string that matches the optimistic copy you want in `app.json`.
+
 Enjoy spreading sunshine, even when the forecast looks cloudy!

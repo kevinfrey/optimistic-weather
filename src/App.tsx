@@ -18,7 +18,7 @@ import {
   loadHistoryEntries,
   persistHistoryEntries,
 } from '@/lib/history-storage'
-import { Loader2, Navigation } from 'lucide-react'
+import { Loader2, Navigation, X } from 'lucide-react'
 
 type Units = 'metric' | 'imperial'
 const UNIT_STORAGE_KEY = 'optimistic-weather-units-v1'
@@ -250,164 +250,162 @@ function App() {
           </h1>
         </header>
 
-        <Card className="border-slate-200/70 bg-white/85 shadow-xl backdrop-blur-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-2xl font-semibold text-slate-900">Find the bright side</CardTitle>
-            <CardDescription className="text-slate-600">
-              Drop in any city, zip code, or landmark and we will surface the upbeat bits.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700" htmlFor="location">
-                  Where should we look?
-                </label>
-                <Input
-                  id="location"
-                  type="text"
-                  placeholder="e.g. Seattle, WA or 94103"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={loading}>
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Curating optimism…
-                  </span>
-                ) : (
-                  'Reveal the bright side'
-                )}
-              </Button>
-              {geoSupported && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleUseLocation}
-                  disabled={loading}
-                  className="flex items-center gap-2"
-                >
-                  <Navigation className="h-4 w-4" aria-hidden />
-                  Use my location
-                </Button>
-              )}
-              <ToggleGroup
-                type="single"
-                value={units}
-                onValueChange={handleUnitsSelect}
-                disabled={loading}
-                  className="rounded-full border border-slate-200 bg-slate-100/60 p-1 text-sm shadow-inner"
-                  aria-label="Select temperature units"
-                >
-                  <ToggleGroupItem
-                    value="imperial"
-                    className="rounded-full px-4"
-                    aria-pressed={units === 'imperial'}
-                  >
-                    Fahrenheit (°F)
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    value="metric"
-                    className="rounded-full px-4"
-                    aria-pressed={units === 'metric'}
-                  >
-                    Celsius (°C)
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
-            </form>
-
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-              <span className="font-semibold text-slate-700">Need inspiration?</span>
-              {['Lisbon, Portugal', 'Sydney, Australia', 'Seattle, WA'].map((preset) => (
-                <Button
-                  key={preset}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleQuickPick(preset)}
-                  disabled={loading}
-                >
-                  {preset.split(',')[0]}
-                </Button>
-              ))}
-            </div>
-
-          </CardContent>
-        </Card>
-
-        {history.length > 0 && (
-          <Card className="border-slate-200/70 bg-white/85 shadow-lg backdrop-blur-sm">
-            <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle className="text-xl font-semibold text-slate-900">Recent searches</CardTitle>
-                <CardDescription className="text-slate-600">
-                  Tap a location to instantly replay its optimistic outlook.
-                </CardDescription>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500"
-                  onClick={() => setHistoryMenuOpen((open) => !open)}
-                >
-                  Manage
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleHistoryClear} disabled={!history.length}>
-                  Clear all
-                </Button>
-              </div>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          <Card className="flex-1 border-slate-200/70 bg-white/85 shadow-xl backdrop-blur-sm">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-2xl font-semibold text-slate-900">Find the bright side</CardTitle>
+              <CardDescription className="text-slate-600">
+                Drop in any city, zip code, or landmark and we will surface the upbeat bits.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <ul className="divide-y divide-slate-200">
-                {history.map((entry) => (
-                  <li
-                    key={entry.id}
-                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+            <CardContent className="space-y-6">
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700" htmlFor="location">
+                    Where should we look?
+                  </label>
+                  <Input
+                    id="location"
+                    type="text"
+                    placeholder="e.g. Seattle, WA or 94103"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="submit" disabled={loading}>
+                    {loading ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        Curating optimism…
+                      </span>
+                    ) : (
+                      'Reveal the bright side'
+                    )}
+                  </Button>
+                  {geoSupported && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleUseLocation}
+                      disabled={loading}
+                      className="flex items-center gap-2"
+                    >
+                      <Navigation className="h-4 w-4" aria-hidden />
+                      Use my location
+                    </Button>
+                  )}
+                  <ToggleGroup
+                    type="single"
+                    value={units}
+                    onValueChange={handleUnitsSelect}
+                    disabled={loading}
+                    className="rounded-full border border-slate-200 bg-slate-100/60 p-1 text-sm shadow-inner"
+                    aria-label="Select temperature units"
                   >
-                    <div className="flex flex-col sm:max-w-md">
-                      <span className="text-sm font-semibold text-slate-900">
-                        {entry.success ? entry.locationLabel ?? entry.query : entry.query}
-                      </span>
-                      <span className="text-xs text-slate-500">
-                        {entry.success ? 'Bright side locked in' : entry.errorMessage ?? 'No forecast found'} ·
-                        {' '}
-                        {formatRelativeTime(entry.timestamp)}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <ToggleGroupItem
+                      value="imperial"
+                      className="rounded-full px-4"
+                      aria-pressed={units === 'imperial'}
+                    >
+                      Fahrenheit (°F)
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="metric"
+                      className="rounded-full px-4"
+                      aria-pressed={units === 'metric'}
+                    >
+                      Celsius (°C)
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              </form>
+
+              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                <span className="font-semibold text-slate-700">Need inspiration?</span>
+                {['Lisbon, Portugal', 'Sydney, Australia', 'Seattle, WA'].map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleQuickPick(preset)}
+                    disabled={loading}
+                  >
+                    {preset.split(',')[0]}
+                  </Button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {history.length > 0 && (
+            <aside className="w-full lg:w-72 lg:flex-shrink-0">
+              <div className="flex h-full flex-col gap-4 rounded-2xl border border-slate-200/70 bg-white/70 p-4 shadow-md backdrop-blur-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                      Recent
+                    </p>
+                    <p className="text-xs text-slate-500">Tap to replay optimism instantly.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500"
+                      onClick={() => setHistoryMenuOpen((open) => !open)}
+                    >
+                      Manage
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-slate-500 hover:text-slate-700"
+                      onClick={handleHistoryClear}
+                      disabled={!history.length}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {history.map((entry) => (
+                    <div key={entry.id} className="group relative flex items-center gap-1">
                       <Button
                         variant="outline"
                         size="sm"
-                        className="min-w-[88px]"
+                        className="flex h-auto min-w-[8rem] flex-col items-start gap-1 whitespace-normal rounded-xl border-slate-200 bg-white/90 px-3 py-2 text-left shadow-sm transition hover:border-slate-300 hover:bg-white"
                         onClick={() => handleHistorySelect(entry)}
                         disabled={loading}
                       >
-                        Re-run
+                        <span className="text-sm font-semibold text-slate-900">
+                          {entry.success ? entry.locationLabel ?? entry.query : entry.query}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {entry.success ? 'Bright side locked in' : entry.errorMessage ?? 'No forecast found'} · {formatRelativeTime(entry.timestamp)}
+                        </span>
                       </Button>
                       {historyMenuOpen && (
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="text-rose-600"
+                          size="icon"
+                          className="h-8 w-8 text-rose-600 hover:text-rose-700"
                           onClick={() => handleHistoryDelete(entry.id)}
+                          aria-label={`Remove ${entry.locationLabel ?? entry.query} from history`}
                         >
-                          Remove
+                          <X className="h-4 w-4" aria-hidden />
                         </Button>
                       )}
                     </div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
+                  ))}
+                </div>
+              </div>
+            </aside>
+          )}
+        </div>
 
         {errorMessage && (
           <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
@@ -453,19 +451,33 @@ function App() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 {forecast.highlights.map((highlight) => (
-                  <div
-                    key={highlight.id}
-                    className="flex h-full flex-col gap-2 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50/90 via-white/90 to-indigo-50/70 p-4 shadow-sm"
-                  >
-                    <h3 className="text-lg font-semibold text-slate-900">{highlight.title}</h3>
-                    <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
-                    {highlight.detail && <p className="text-xs text-slate-500">{highlight.detail}</p>}
-                    {highlight.metricLabel && highlight.metricValue && (
-                      <div className="mt-auto flex items-center justify-between text-xs text-slate-500">
-                        <span>{highlight.metricLabel}</span>
-                        <span className="font-semibold text-slate-700">{highlight.metricValue}</span>
-                      </div>
-                    )}
+                  <div key={highlight.id} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-md ring-1 ring-inset ring-sky-100/40 transition-shadow hover:shadow-lg">
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-sky-50/70 via-transparent to-indigo-50/60" aria-hidden />
+                    <div className="relative flex h-full flex-col gap-3 p-5">
+                      {(highlight.heroStatValue ?? highlight.heroStatLabel) && (
+                        <div className="flex flex-wrap items-baseline gap-2 text-slate-900">
+                          {highlight.heroStatValue && (
+                            <span className="text-3xl font-semibold tracking-tight">
+                              {highlight.heroStatValue}
+                            </span>
+                          )}
+                          {highlight.heroStatLabel && (
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
+                              {highlight.heroStatLabel}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <h3 className="text-lg font-semibold text-slate-900">{highlight.title}</h3>
+                      <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
+                      {highlight.detail && <p className="text-xs text-slate-500">{highlight.detail}</p>}
+                      {highlight.metricLabel && highlight.metricValue && (
+                        <div className="mt-auto flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500 shadow-inner">
+                          <span>{highlight.metricLabel}</span>
+                          <span className="font-semibold text-slate-700">{highlight.metricValue}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Optimistic Weather",
+    "slug": "optimistic-weather-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "jsEngine": "hermes",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-location"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    }
+  }
+}
