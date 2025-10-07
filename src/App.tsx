@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,9 +19,13 @@ import {
   persistHistoryEntries,
 } from '@/lib/history-storage'
 import { Loader2, Navigation, X } from 'lucide-react'
+import TenDayOutlook from '@/components/forecast/TenDayOutlook'
+import RadarView from '@/components/radar/RadarView'
 
 type Units = 'metric' | 'imperial'
+type ActivePanel = 'highlights' | 'outlook' | 'radar'
 const UNIT_STORAGE_KEY = 'optimistic-weather-units-v1'
+const PANEL_STORAGE_KEY = 'optimistic-weather-panel-v1'
 const HISTORY_LIMIT = 8
 
 const formatTemperature = (value: number, units: Units) => {
@@ -70,6 +74,14 @@ function App() {
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false)
   const [geoSupported] = useState(() => typeof navigator !== 'undefined' && !!navigator.geolocation)
   const [geoError, setGeoError] = useState<string | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [activePanel, setActivePanel] = useState<ActivePanel>(() => {
+    if (typeof window === 'undefined') {
+      return 'highlights'
+    }
+    const stored = window.localStorage.getItem(PANEL_STORAGE_KEY) as ActivePanel | null
+    return stored === 'outlook' || stored === 'radar' ? stored : 'highlights'
+  })
 
   useEffect(() => {
     persistHistoryEntries(history)
@@ -81,6 +93,13 @@ function App() {
     }
     window.localStorage.setItem(UNIT_STORAGE_KEY, units)
   }, [units])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    window.localStorage.setItem(PANEL_STORAGE_KEY, activePanel)
+  }, [activePanel])
 
   const recordHistory = (entry: Omit<SearchHistoryEntry, 'id'>) => {
     const id = crypto?.randomUUID ? crypto.randomUUID() : `hist-${Date.now()}`
@@ -232,6 +251,14 @@ function App() {
   }
 
   const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
+  const extendedOutlook = forecast?.extendedOutlook
+
+  const handlePanelSelect = (value: ActivePanel | '') => {
+    if (!value) {
+      return
+    }
+    setActivePanel(value)
+  }
 
   return (
     <div className="relative">
@@ -264,14 +291,32 @@ function App() {
                   <label className="text-sm font-medium text-slate-700" htmlFor="location">
                     Where should we look?
                   </label>
-                  <Input
-                    id="location"
-                    type="text"
-                    placeholder="e.g. Seattle, WA or 94103"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    autoComplete="off"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="location"
+                      type="text"
+                      placeholder="e.g. Seattle, WA or 94103"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      autoComplete="off"
+                      ref={searchInputRef}
+                      className="pr-10"
+                    />
+                    {query && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuery('')
+                          setError(null)
+                          searchInputRef.current?.focus()
+                        }}
+                        className="absolute inset-y-0 right-2 flex items-center text-slate-400 transition hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-4 w-4" aria-hidden />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -449,38 +494,80 @@ function App() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {forecast.highlights.map((highlight) => (
-                  <div key={highlight.id} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-md ring-1 ring-inset ring-sky-100/40 transition-shadow hover:shadow-lg">
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-sky-50/70 via-transparent to-indigo-50/60" aria-hidden />
-                    <div className="relative flex h-full flex-col gap-3 p-5">
-                      {(highlight.heroStatValue ?? highlight.heroStatLabel) && (
-                        <div className="flex flex-wrap items-baseline gap-2 text-slate-900">
-                          {highlight.heroStatValue && (
-                            <span className="text-3xl font-semibold tracking-tight">
-                              {highlight.heroStatValue}
-                            </span>
-                          )}
-                          {highlight.heroStatLabel && (
-                            <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
-                              {highlight.heroStatLabel}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      <h3 className="text-lg font-semibold text-slate-900">{highlight.title}</h3>
-                      <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
-                      {highlight.detail && <p className="text-xs text-slate-500">{highlight.detail}</p>}
-                      {highlight.metricLabel && highlight.metricValue && (
-                        <div className="mt-auto flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500 shadow-inner">
-                          <span>{highlight.metricLabel}</span>
-                          <span className="font-semibold text-slate-700">{highlight.metricValue}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="flex flex-wrap items-center gap-3">
+                <ToggleGroup
+                  type="single"
+                  value={activePanel}
+                  onValueChange={handlePanelSelect}
+                  className="rounded-full border border-slate-200 bg-slate-100/60 p-1 text-sm shadow-inner"
+                  aria-label="Select forecast view"
+                  disabled={loading && !forecast}
+                >
+                  <ToggleGroupItem value="highlights" className="rounded-full px-4">
+                    24-hour highlights
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="outlook" className="rounded-full px-4">
+                    10-day outlook
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="radar" className="rounded-full px-4">
+                    Live radar
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
+
+              {activePanel === 'highlights' ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {forecast.highlights.map((highlight) => (
+                    <div key={highlight.id} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-md ring-1 ring-inset ring-sky-100/40 transition-shadow hover:shadow-lg">
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-sky-50/70 via-transparent to-indigo-50/60" aria-hidden />
+                      <div className="relative flex h-full flex-col gap-3 p-5">
+                        {(highlight.heroStatValue ?? highlight.heroStatLabel) && (
+                          <div className="flex flex-wrap items-baseline gap-2 text-slate-900">
+                            {highlight.heroStatValue && (
+                              <span className="text-3xl font-semibold tracking-tight">
+                                {highlight.heroStatValue}
+                              </span>
+                            )}
+                            {highlight.heroStatLabel && (
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">
+                                {highlight.heroStatLabel}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <h3 className="text-lg font-semibold text-slate-900">{highlight.title}</h3>
+                        <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
+                        {highlight.detail && <p className="text-xs text-slate-500">{highlight.detail}</p>}
+                        {highlight.metricLabel && highlight.metricValue && (
+                          <div className="mt-auto flex items-center justify-between rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500 shadow-inner">
+                            <span>{highlight.metricLabel}</span>
+                            <span className="font-semibold text-slate-700">{highlight.metricValue}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {activePanel === 'outlook' ? (
+                <TenDayOutlook
+                  days={extendedOutlook?.days ?? []}
+                  units={units}
+                  isComplete={extendedOutlook?.isComplete ?? false}
+                  message={extendedOutlook?.message}
+                  isLoading={loading && !(extendedOutlook && extendedOutlook.days.length > 0)}
+                  onRetry={lastQuery ? () => { void runSearch(lastQuery, units) } : undefined}
+                />
+              ) : null}
+
+              {activePanel === 'radar' && forecast ? (
+                <RadarView
+                  coordinates={forecast.coordinates}
+                  locationLabel={forecast.locationLabel}
+                  isLoading={loading}
+                />
+              ) : null}
             </CardContent>
             <CardFooter className="justify-end text-xs text-muted-foreground">
               Next snapshot around {formatTime(forecast.nextUpdate)} · Units: {unitsLabel}

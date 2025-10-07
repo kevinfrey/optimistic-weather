@@ -10,6 +10,8 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 - **Smart search history** – Recent lookups persist locally so you can replay bright-side forecasts in a single click, including errored attempts for quick retries.
 - **Zip code friendly** – Recognises common postal-code formats (e.g. `94103` or `W1A,GB`) and maps them to the right place automatically.
 - **Responsive experience** – Mobile-first layout, collapsible history actions, and careful spacing keep the UI welcoming on any screen size.
+- **10-day outlook** – Scroll a long-range Bright Side forecast with optimistic headliners on every day.
+- **Live radar snapshot** – Peek at precipitation patterns centred on your selected location via the embedded RainViewer tiles.
 - **Transparent optimism** – Every highlight shows the underlying metric (rain chance, wind speed, visibility) so users see the facts behind the flip.
 - **One-tap local forecast** – Grant location permission to instantly load the optimistic outlook for wherever you’re standing.
 
@@ -54,6 +56,9 @@ Optimistic Weather is a Vite + React + TypeScript single-page app that reframes 
 
 ## API Notes
 - Forecast requests call `fetchOptimisticForecast` in `src/services/openWeather.ts`, which performs geocoding (with fuzzy matching + postal lookups) then constructs highlights from the first ~24 hours of data.
+- The same service now stitches in a 10-day outlook via OpenWeather’s One Call 3.0 API, with the 16-day daily endpoint filling any missing days. Make sure both endpoints are enabled for your key.
+- Long-range optimistic copy lives in `src/components/forecast/optimisticCopy.ts` and powers the playful “chance of awesome” taglines.
+- The radar view embeds RainViewer tiles client-side. Refreshing the frames keeps the animation current, and the component links back to RainViewer for attribution.
 - The app surfaces error details when the API returns 4xx/5xx responses, so you can see authentication or location issues instantly.
 - To avoid rate limits in production, consider caching responses or throttling repeated lookups.
 

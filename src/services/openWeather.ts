@@ -4,10 +4,19 @@ import type {
   GeoLocation,
   OptimisticForecast,
   OptimisticHighlight,
+  OptimisticExtendedOutlook,
+  OptimisticDailyOutlook,
   Coordinates,
+  ExtendedForecastResponse,
+  DailyForecastEntry,
+  LegacyDailyForecastResponse,
+  LegacyDailyForecastEntry,
 } from '../types/weather'
 
 const API_BASE = 'https://api.openweathermap.org'
+const EXTENDED_OUTLOOK_REQUIRED_DAYS = 10
+const EXTENDED_OUTLOOK_LIMITED_MESSAGE = 'Extended outlook limited by available data.'
+const EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE = 'Extended outlook unavailable for this location right now.'
 
 const regionDisplayNames = typeof Intl !== 'undefined' && 'DisplayNames' in Intl
   ? new Intl.DisplayNames(['en'], { type: 'region' })
@@ -198,6 +207,7 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
 
     const matchesCountryHint = matchesCountryFromOption(option.country)
     const matchesStateHint = matchesStateFromOption(option)
+    const isUsOption = option.country.toUpperCase() === 'US'
 
     let score = distance
     if (matchesCountryHint) {
@@ -209,6 +219,11 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
       score -= 25
     } else if (hasStateHints) {
       score += 15
+      if (isUsOption) {
+        score -= 10
+      } else {
+        score += 10
+      }
     }
 
     return { option, score }
@@ -291,11 +306,157 @@ export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   return match
 }
 
+const clampPopPercent = (value: number | undefined): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null
+  }
+  const ratio = Math.min(Math.max(value, 0), 1)
+  return Math.round(ratio * 100)
+}
+
+const toDateWithOffset = (timestamp: number | undefined, offsetSeconds: number): Date | undefined => {
+  if (typeof timestamp !== 'number' || Number.isNaN(timestamp)) {
+    return undefined
+  }
+  return new Date((timestamp + offsetSeconds) * 1000)
+}
+
+const fetchPrimaryDailyForecast = async (
+  lat: number,
+  lon: number,
+  units: 'metric' | 'imperial',
+): Promise<ExtendedForecastResponse | null> => {
+  // OpenWeather One Call 3.0 exposes up to 16 daily entries; we ingest and trim to 10.
+  const apiKey = assertApiKey()
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    units,
+    exclude: 'current,minutely,hourly,alerts',
+    appid: apiKey,
+  })
+  const url = `${API_BASE}/data/3.0/onecall?${params.toString()}`
+
+  try {
+    return await fetchJson<ExtendedForecastResponse>(url)
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('Extended daily forecast unavailable:', error)
+    }
+    return null
+  }
+}
+
+const fetchLegacyDailyForecast = async (
+  lat: number,
+  lon: number,
+  units: 'metric' | 'imperial',
+): Promise<LegacyDailyForecastResponse | null> => {
+  const apiKey = assertApiKey()
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    units,
+    cnt: String(EXTENDED_OUTLOOK_REQUIRED_DAYS + 2),
+    appid: apiKey,
+  })
+  const url = `${API_BASE}/data/2.5/forecast/daily?${params.toString()}`
+
+  try {
+    return await fetchJson<LegacyDailyForecastResponse>(url)
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('Legacy daily forecast unavailable:', error)
+    }
+    return null
+  }
+}
+
+const normalizeLegacyDailyEntry = (entry: LegacyDailyForecastEntry): DailyForecastEntry => ({
+  dt: entry.dt,
+  sunrise: entry.sunrise,
+  sunset: entry.sunset,
+  temp: entry.temp,
+  feels_like: entry.feels_like,
+  pressure: entry.pressure,
+  humidity: entry.humidity,
+  weather: entry.weather,
+  clouds: entry.clouds,
+  wind_speed: entry.speed,
+  wind_gust: entry.gust,
+  wind_deg: entry.deg,
+  pop: entry.pop,
+  rain: entry.rain,
+  snow: entry.snow,
+})
+
+const mergeDailyEntries = (
+  primary: DailyForecastEntry[],
+  fallback: DailyForecastEntry[],
+): DailyForecastEntry[] => {
+  const keyed = new Map<string, DailyForecastEntry>()
+
+  const apply = (entries: DailyForecastEntry[]) => {
+    entries.forEach((entry) => {
+      const key = new Date(entry.dt * 1000).toISOString().slice(0, 10)
+      if (!keyed.has(key)) {
+        keyed.set(key, entry)
+      }
+    })
+  }
+
+  apply(primary)
+  apply(fallback)
+
+  return Array.from(keyed.values())
+    .sort((a, b) => a.dt - b.dt)
+    .slice(0, EXTENDED_OUTLOOK_REQUIRED_DAYS)
+}
+
+const buildExtendedOutlook = (
+  dailyEntries: DailyForecastEntry[] | undefined,
+  timezoneOffsetSeconds: number,
+): OptimisticDailyOutlook[] => {
+  if (!dailyEntries?.length) {
+    return []
+  }
+
+  return dailyEntries
+    .filter((entry): entry is DailyForecastEntry =>
+      !!entry
+      && typeof entry.temp?.max === 'number'
+      && !Number.isNaN(entry.temp.max)
+      && typeof entry.temp?.min === 'number'
+      && !Number.isNaN(entry.temp.min),
+    )
+    .slice(0, 10)
+    .map((entry) => {
+      const primary = entry.weather?.[0]
+      const dayAverage = typeof entry.temp.day === 'number'
+        ? entry.temp.day
+        : (entry.temp.max + entry.temp.min) / 2
+
+      return {
+        date: new Date((entry.dt + timezoneOffsetSeconds) * 1000),
+        high: entry.temp.max,
+        low: entry.temp.min,
+        dayAverage,
+        precipitationChancePercent: clampPopPercent(entry.pop),
+        condition: primary?.main ?? 'Clear',
+        description: primary?.description ?? primary?.main ?? 'Clear skies',
+        sunrise: toDateWithOffset(entry.sunrise, timezoneOffsetSeconds),
+        sunset: toDateWithOffset(entry.sunset, timezoneOffsetSeconds),
+        source: 'onecall',
+      }
+    })
+}
+
 export const __internal = {
   levenshteinDistance,
   pickBestMatch,
   geocodeByZip,
   ZIP_QUERY_REGEX,
+  buildExtendedOutlook,
 }
 
 const fetchForecast = async (
@@ -306,6 +467,42 @@ const fetchForecast = async (
   const apiKey = assertApiKey()
   const url = `${API_BASE}/data/2.5/forecast?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`
   return fetchJson<ForecastResponse>(url)
+}
+
+const fetchDailyForecast = async (
+  lat: number,
+  lon: number,
+  units: 'metric' | 'imperial',
+): Promise<ExtendedForecastResponse | null> => {
+  const primary = await fetchPrimaryDailyForecast(lat, lon, units)
+  if (primary?.daily?.length && primary.daily.length >= EXTENDED_OUTLOOK_REQUIRED_DAYS) {
+    return primary
+  }
+
+  const fallback = await fetchLegacyDailyForecast(lat, lon, units)
+  if (!fallback?.list?.length) {
+    return primary
+  }
+
+  const fallbackAsDaily = fallback.list.map(normalizeLegacyDailyEntry)
+  const timezoneOffset = fallback.city.timezone ?? 0
+
+  if (!primary) {
+    return {
+      lat,
+      lon,
+      timezone: 'legacy',
+      timezone_offset: timezoneOffset,
+      daily: fallbackAsDaily,
+    }
+  }
+
+  const merged = mergeDailyEntries(primary.daily ?? [], fallbackAsDaily)
+  return {
+    ...primary,
+    daily: merged,
+    timezone_offset: primary.timezone_offset ?? timezoneOffset,
+  }
 }
 
 const average = (values: number[]) => {
@@ -378,9 +575,9 @@ const craftHighlights = (
   }).length
 
   const avgPopValue = normalizedPopValues.length ? average(normalizedPopValues) : 0
-  let drynessRatio = 1 - avgPopValue
+  const dryShareFromPop = 1 - avgPopValue
   const wetPenalty = 1 - wetBlocks / horizon.length
-  drynessRatio = Math.min(drynessRatio, wetPenalty)
+  let drynessRatio = dryShareFromPop * Math.max(wetPenalty, 0)
   drynessRatio = Math.max(0, Math.min(1, drynessRatio))
   const avgDryness = Math.round(drynessRatio * 100)
   const rainChancePercent = Math.round((1 - drynessRatio) * 100)
@@ -439,11 +636,11 @@ const craftHighlights = (
 
   highlights.push({
     id: 'clouds',
-    title: 'Blue-Sky Windows',
-    takeaway: `${cloudOpenings}% of the next stretch features blue-sky cameos.`,
-    detail: 'Great lighting for photos and quick outdoor breaks.',
+    title: 'Face Melt Factor',
+    takeaway: `${cloudOpenings}% odds the sun shows up so hard your face melts (in the best way).`,
+    detail: 'Cue the SPF and the grin—the sky’s ready for full-send sunshine sessions.',
     heroStatValue: `${cloudOpenings}%`,
-    heroStatLabel: 'Blue-sky share',
+    heroStatLabel: 'Sun splash',
     metricLabel: 'Avg cloud cover',
     metricValue: `${avgCloudCover}%`,
   })
@@ -571,6 +768,7 @@ export const fetchOptimisticForecast = async (
 ): Promise<OptimisticForecast> => {
   const location = await geocodeLocation(query)
   const forecast = await fetchForecast(location.lat, location.lon, units)
+  const extendedResponse = await fetchDailyForecast(location.lat, location.lon, units)
   const horizon = forecast.list.slice(0, 8) // roughly the next 24 hours
   const first = horizon[0]
   const temps = horizon.map((entry) => entry.main.temp)
@@ -586,6 +784,31 @@ export const fetchOptimisticForecast = async (
   const skySummary = buildSkySummary(first)
   const highlights = craftHighlights(horizon, units, forecast.city.timezone)
 
+  let extendedOutlook: OptimisticExtendedOutlook | undefined
+  if (extendedResponse) {
+    const days = buildExtendedOutlook(extendedResponse.daily, extendedResponse.timezone_offset ?? 0)
+    if (days.length) {
+      const isComplete = days.length >= EXTENDED_OUTLOOK_REQUIRED_DAYS
+      extendedOutlook = {
+        days,
+        isComplete,
+        message: isComplete ? undefined : EXTENDED_OUTLOOK_LIMITED_MESSAGE,
+      }
+    } else {
+      extendedOutlook = {
+        days: [],
+        isComplete: false,
+        message: EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE,
+      }
+    }
+  } else {
+    extendedOutlook = {
+      days: [],
+      isComplete: false,
+      message: EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE,
+    }
+  }
+
   const locationLabelParts = [location.name]
   if (location.state) {
     locationLabelParts.push(location.state)
@@ -600,5 +823,10 @@ export const fetchOptimisticForecast = async (
     temperature,
     skySummary,
     highlights,
+    extendedOutlook,
+    coordinates: {
+      lat: location.lat,
+      lon: location.lon,
+    },
   }
 }

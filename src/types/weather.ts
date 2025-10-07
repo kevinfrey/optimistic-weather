@@ -60,6 +60,68 @@ export interface ForecastResponse {
   }
 }
 
+export interface DailyTemperature {
+  day: number
+  min: number
+  max: number
+  night?: number
+  eve?: number
+  morn?: number
+}
+
+export interface DailyForecastEntry {
+  dt: number
+  sunrise?: number
+  sunset?: number
+  moonrise?: number
+  moonset?: number
+  temp: DailyTemperature
+  feels_like?: Record<string, number>
+  pressure?: number
+  humidity?: number
+  weather: ForecastWeather[]
+  clouds?: number
+  wind_speed?: number
+  wind_gust?: number
+  wind_deg?: number
+  pop?: number
+  rain?: number
+  snow?: number
+}
+
+export interface ExtendedForecastResponse {
+  lat: number
+  lon: number
+  timezone: string
+  timezone_offset: number
+  daily: DailyForecastEntry[]
+}
+
+export interface LegacyDailyForecastEntry {
+  dt: number
+  sunrise?: number
+  sunset?: number
+  temp: DailyTemperature
+  feels_like?: Record<string, number>
+  pressure?: number
+  humidity?: number
+  weather: ForecastWeather[]
+  clouds?: number
+  speed?: number
+  gust?: number
+  deg?: number
+  pop?: number
+  rain?: number
+  snow?: number
+}
+
+export interface LegacyDailyForecastResponse {
+  city: {
+    timezone: number
+  }
+  list: LegacyDailyForecastEntry[]
+}
+
 export interface OptimisticHighlight {
   id: string
   title: string
@@ -83,6 +145,8 @@ export interface OptimisticForecast {
   }
   skySummary: string
   highlights: OptimisticHighlight[]
+  extendedOutlook?: OptimisticExtendedOutlook
+  coordinates: Coordinates
 }
 
 export interface Coordinates {
@@ -97,4 +161,23 @@ export interface SearchHistoryEntry {
   success: boolean
   locationLabel?: string
   errorMessage?: string
+}
+
+export interface OptimisticDailyOutlook {
+  date: Date
+  high: number
+  low: number
+  dayAverage: number
+  precipitationChancePercent: number | null
+  condition: string
+  description: string
+  sunrise?: Date
+  sunset?: Date
+  source: 'onecall'
+}
+
+export interface OptimisticExtendedOutlook {
+  days: OptimisticDailyOutlook[]
+  isComplete: boolean
+  message?: string
 }
