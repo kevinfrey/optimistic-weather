@@ -25,7 +25,7 @@ const regionDisplayNames = typeof Intl !== 'undefined' && 'DisplayNames' in Intl
   ? new Intl.DisplayNames(['en'], { type: 'region' })
   : null
 
-const US_STATE_CODE_TO_NAME = new Map<string, string>([
+export const US_STATE_CODE_TO_NAME = new Map<string, string>([
   ['AL', 'Alabama'],
   ['AK', 'Alaska'],
   ['AZ', 'Arizona'],
@@ -79,7 +79,7 @@ const US_STATE_CODE_TO_NAME = new Map<string, string>([
   ['DC', 'District of Columbia'],
 ])
 
-const US_STATE_NAME_TO_CODE = new Map<string, string>(
+export const US_STATE_NAME_TO_CODE = new Map<string, string>(
   Array.from(US_STATE_CODE_TO_NAME.entries()).map(([code, name]) => [name.toLowerCase(), code]),
 )
 
@@ -267,18 +267,26 @@ const dedupeLocations = (locations: GeoLocation[]): GeoLocation[] => {
   })
 }
 
+export const formatUsLocationLabel = (location: GeoLocation): string => {
+  const parts = [location.name]
+  if (location.state) {
+    const normalizedState = US_STATE_NAME_TO_CODE.get(location.state.toLowerCase())
+    const stateCode = normalizedState
+      ? normalizedState.toUpperCase()
+      : location.state.length === 2
+        ? location.state.toUpperCase()
+        : location.state
+    parts.push(stateCode)
+  }
+  return parts.join(', ')
+}
+
+const filterUsLocations = (locations: GeoLocation[]): GeoLocation[] =>
+  locations.filter((location) => location.country?.toUpperCase() === 'US')
+
 export interface LocationSuggestion {
   location: GeoLocation
   searchValue: string
-}
-
-const formatSearchValue = (location: GeoLocation) => {
-  const parts = [location.name]
-  if (location.state) {
-    parts.push(location.state)
-  }
-  parts.push(location.country)
-  return parts.join(', ')
 }
 
 const dedupeSuggestions = (items: LocationSuggestion[]): LocationSuggestion[] => {
@@ -305,27 +313,35 @@ export const searchLocationSuggestions = async (query: string): Promise<Location
   if (zipCandidate) {
     const [, zip, rawCountry] = zipCandidate
     const country = (rawCountry ?? 'US').toUpperCase()
-    const zipResult = await geocodeByZip(zip, country)
-    if (zipResult) {
-      suggestions.push({
-        location: zipResult,
-        searchValue: rawCountry ? `${zip},${country}` : zip,
-      })
+    if (country === 'US') {
+      const zipResult = await geocodeByZip(zip, country)
+      if (zipResult) {
+        suggestions.push({
+          location: zipResult,
+          searchValue: zip,
+        })
+      }
     }
   }
 
-  const primaryResults = await geocode(trimmedQuery)
+  const primaryResults = filterUsLocations(await geocode(trimmedQuery))
   const bestPrimary = pickBestMatch(trimmedQuery, primaryResults)
   if (bestPrimary) {
-    suggestions.push({ location: bestPrimary, searchValue: formatSearchValue(bestPrimary) })
+    suggestions.push({ location: bestPrimary, searchValue: formatUsLocationLabel(bestPrimary) })
     primaryResults.forEach((result) => {
       if (result !== bestPrimary) {
-        suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+        suggestions.push({
+          location: result,
+          searchValue: formatUsLocationLabel(result),
+        })
       }
     })
   } else {
     primaryResults.forEach((result) => {
-      suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+      suggestions.push({
+        location: result,
+        searchValue: formatUsLocationLabel(result),
+      })
     })
   }
 
@@ -333,9 +349,9 @@ export const searchLocationSuggestions = async (query: string): Promise<Location
     const [cityOnly] = trimmedQuery.split(',')
     const fallbackQuery = cityOnly.trim()
     if (fallbackQuery.length >= 2 && fallbackQuery.toLowerCase() !== trimmedQuery.toLowerCase()) {
-      const fallbackResults = await geocode(fallbackQuery)
+      const fallbackResults = filterUsLocations(await geocode(fallbackQuery))
       fallbackResults.forEach((result) => {
-        suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+        suggestions.push({ location: result, searchValue: formatUsLocationLabel(result) })
       })
     }
   }
@@ -391,12 +407,12 @@ export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
     }
   }
 
-  const primaryResults = await geocode(trimmedQuery)
+  const primaryResults = filterUsLocations(await geocode(trimmedQuery))
   let match = pickBestMatch(trimmedQuery, primaryResults)
 
   if (!match && trimmedQuery.includes(',')) {
     const [cityOnly] = trimmedQuery.split(',')
-    const fallbackResults = await geocode(cityOnly)
+    const fallbackResults = filterUsLocations(await geocode(cityOnly))
     match = pickBestMatch(cityOnly, fallbackResults)
   }
 
@@ -945,16 +961,10 @@ export const fetchOptimisticForecast = async (
     }
   }
 
-  const locationLabelParts = [location.name]
-  if (location.state) {
-    locationLabelParts.push(location.state)
-  }
-  locationLabelParts.push(location.country)
-
   const nextUpdateDate = new Date((first.dt + forecast.city.timezone) * 1000)
 
   return {
-    locationLabel: locationLabelParts.join(', '),
+    locationLabel: formatUsLocationLabel(location),
     nextUpdate: nextUpdateDate,
     temperature,
     skySummary,

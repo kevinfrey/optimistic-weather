@@ -16,6 +16,7 @@ import {
   fetchOptimisticForecast,
   reverseGeocode,
   searchLocationSuggestions,
+  formatUsLocationLabel,
 } from '@/services/openWeather'
 import type {
   Coordinates,
@@ -52,26 +53,13 @@ const PANEL_STORAGE_KEY = 'optimistic-weather-panel-v1'
 const HISTORY_LIMIT = 8
 const MIN_AUTOCOMPLETE_QUERY_LENGTH = 2
 
-const formatLocationSuggestionLabel = (location: GeoLocation) => {
-  const parts = [location.name]
-  if (location.state) {
-    parts.push(location.state)
-  }
-  parts.push(location.country)
-  return parts.join(', ')
-}
+const formatLocationSuggestionLabel = (location: GeoLocation) => formatUsLocationLabel(location)
 
 const formatTemperature = (value: number, units: Units) => {
   const rounded = Math.round(value)
   const suffix = units === 'metric' ? '°C' : '°F'
   return `${rounded}${suffix}`
 }
-
-const formatTime = (date: Date) =>
-  date.toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 
 const formatRelativeTime = (timestamp: number) => {
   const diffMs = Date.now() - timestamp
@@ -263,12 +251,6 @@ function App() {
     if (lastQuery) {
       void runSearch(lastQuery, nextUnits)
     }
-  }
-
-  const handleQuickPick = (preset: string) => {
-    setQuery(preset)
-    setPendingSearchValue(null)
-    void runSearch(preset, units)
   }
 
   const handleSuggestionSelect = (suggestion: LocationSuggestion) => {
@@ -492,7 +474,6 @@ function App() {
     )
   }
 
-  const unitsLabel = units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'
   const extendedOutlook = forecast?.extendedOutlook
 
   const handlePanelSelect = (value: ActivePanel | '') => {
@@ -506,8 +487,8 @@ function App() {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/70 to-amber-50/40">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-16">
-        <header className="space-y-3 text-left sm:text-center">
-          <div className="flex justify-start sm:justify-center">
+        <header className="space-y-2 text-left sm:text-center">
+          <div className="flex flex-col items-start gap-1 sm:items-center">
             <span className="relative inline-flex items-center justify-center text-4xl font-black uppercase tracking-[0.4em] text-transparent sm:text-5xl">
               <span
                 className="absolute inset-0 -scale-x-100 transform bg-gradient-to-r from-[#ff6ec7] via-[#ffb347] to-[#32fff0] opacity-80 blur-md"
@@ -517,10 +498,16 @@ function App() {
                 Bright Side
               </span>
             </span>
+            <span className="relative inline-flex items-center justify-center text-2xl font-semibold uppercase tracking-[0.35em] text-transparent sm:text-3xl">
+              <span
+                className="absolute inset-0 -scale-x-100 transform bg-gradient-to-r from-[#ff6ec7] via-[#ffb347] to-[#32fff0] opacity-70 blur-md"
+                aria-hidden
+              />
+              <span className="relative bg-gradient-to-r from-[#ff6ec7] via-[#ffdd55] to-[#32fff0] bg-clip-text drop-shadow-[0_0_14px_rgba(255,136,206,0.45)]">
+                Weather
+              </span>
+            </span>
           </div>
-          <p className="mx-auto max-w-2xl text-base text-slate-600 sm:text-lg">
-            Flip every forecast into a reason to smile with cards that celebrate the sunnier details.
-          </p>
         </header>
 
         <AnimatePresence>
@@ -550,7 +537,7 @@ function App() {
                       <Input
                         id="location"
                         type="text"
-                        placeholder="e.g. Seattle, WA or 94103"
+                        placeholder="e.g. Louisville, KY or 40299"
                         value={query}
                         onChange={(event) => {
                           setQuery(event.target.value)
@@ -667,21 +654,6 @@ function App() {
                 </div>
               </form>
 
-              <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
-                <span className="font-semibold text-slate-700">Need inspiration?</span>
-                {['Lisbon, Portugal', 'Sydney, Australia', 'Seattle, WA'].map((preset) => (
-                  <Button
-                    key={preset}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleQuickPick(preset)}
-                    disabled={loading}
-                  >
-                    {preset.split(',')[0]}
-                  </Button>
-                ))}
-              </div>
               </CardContent>
             </Card>
 

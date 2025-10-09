@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GeoLocation } from '@/types/weather'
-import { __internal } from '@/services/openWeather'
+import { __internal, formatUsLocationLabel } from '@/services/openWeather'
 
 const sampleOptions: GeoLocation[] = [
   { name: 'Cincinnati', lat: 39.1031, lon: -84.512, state: 'OH', country: 'US' },
@@ -71,5 +71,17 @@ describe('geocoding helpers', () => {
     expect(deduped).toHaveLength(2)
     expect(deduped.some((location) => location.country === 'FR')).toBe(true)
     expect(deduped.some((location) => location.country === 'US')).toBe(true)
+  })
+
+  it('formats US labels as city and state code when available', () => {
+    const label = formatUsLocationLabel({
+      name: 'Louisville',
+      state: 'Kentucky',
+      lat: 38.2527,
+      lon: -85.7585,
+      country: 'US',
+    })
+
+    expect(label).toBe('Louisville, KY')
   })
 })
