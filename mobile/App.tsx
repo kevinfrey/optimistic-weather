@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import {
   ActivityIndicator,
@@ -7,20 +7,27 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextStyle,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
 import * as Location from 'expo-location'
+import { LinearGradient } from 'expo-linear-gradient'
+import MaskedView from '@react-native-masked-view/masked-view'
 
 import type {
   Coordinates,
   OptimisticForecast,
+  OptimisticHighlight,
+  LocationSuggestion,
   SearchHistoryEntry,
 } from './src/types/weather'
 import {
   fetchOptimisticForecast,
   reverseGeocode,
+  searchLocationSuggestions,
+  formatUsLocationLabel,
 } from './src/services/openWeather'
 import {
   clearHistoryEntries,
@@ -32,16 +39,25 @@ const HISTORY_LIMIT = 8
 
 type Units = 'metric' | 'imperial'
 
+const GRADIENT_COLORS = ['#ff6ec7', '#ffdd55', '#32fff0']
+
+const GradientText = ({ text, style }: { text: string; style: TextStyle }) => (
+  <MaskedView maskElement={<Text style={[style, styles.gradientMask]}>{text}</Text>}>
+    <LinearGradient
+      colors={GRADIENT_COLORS}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={styles.gradientContainer}
+    >
+      <Text style={[style, styles.gradientFill]}>{text}</Text>
+    </LinearGradient>
+  </MaskedView>
+)
+
 const formatTemperature = (value: number, units: Units) => {
   const rounded = Math.round(value)
   return `${rounded}${units === 'metric' ? '°C' : '°F'}`
 }
-
-const formatTime = (date: Date) =>
-  date.toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 
 const formatRelativeTime = (timestamp: number) => {
   const diffMs = Date.now() - timestamp
@@ -62,8 +78,6 @@ const formatRelativeTime = (timestamp: number) => {
 
 const createHistoryId = () => `${Date.now()}-${Math.round(Math.random() * 1_000_000)}`
 
-const quickPicks = ['Lisbon, Portugal', 'Sydney, Australia', 'Seattle, WA']
-
 function App() {
   const [query, setQuery] = useState('')
   const [units, setUnits] = useState<Units>('imperial')
@@ -74,6 +88,35 @@ function App() {
   const [lastQuery, setLastQuery] = useState<string | null>(null)
   const [history, setHistory] = useState<SearchHistoryEntry[]>([])
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false)
+  const [searchVisible, setSearchVisible] = useState(false)
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
+  const autoLocateAttemptedRef = useRef(false)
+  const suggestionRequestIdRef = useRef(0)
+
+  const highlightIconMap = useMemo<Record<string, string>>(
+    () => ({
+      dryness: '☀️',
+      refresh: '🌧️',
+      clouds: '😎',
+      'feels-like': '🧥',
+      cooler: '🧣',
+      warmer: '🔥',
+      humidity: '💧',
+      hydration: '💧',
+      visibility: '🔭',
+      'cozy-views': '🌫️',
+      breeze: '🍃',
+      'wind-energy': '🌬️',
+    }),
+    [],
+  )
+
+  const highlightCards = useMemo(
+    () => (forecast ? forecast.highlights.filter((highlight) => highlightIconMap[highlight.id]) : []),
+    [forecast, highlightIconMap],
+  )
 
   useEffect(() => {
     void (async () => {
@@ -85,6 +128,80 @@ function App() {
   useEffect(() => {
     void persistHistoryEntries(history)
   }, [history])
+
+  useEffect(() => {
+    if (autoLocateAttemptedRef.current) {
+      return
+    }
+    autoLocateAttemptedRef.current = true
+    void handleUseLocation()
+  }, [])
+
+  useEffect(() => {
+    if (!loading && !forecast && (error || geoError)) {
+      setSearchVisible(true)
+    }
+  }, [loading, forecast, error, geoError])
+
+  useEffect(() => {
+    if (!searchVisible) {
+      setSuggestions([])
+      setSuggestionsError(null)
+      setSuggestionsLoading(false)
+      return
+    }
+
+    const trimmed = query.trim()
+    if (trimmed.length < 2) {
+      setSuggestions([])
+      setSuggestionsError(null)
+      setSuggestionsLoading(false)
+      return
+    }
+
+    const requestId = suggestionRequestIdRef.current + 1
+    suggestionRequestIdRef.current = requestId
+    setSuggestionsLoading(true)
+    setSuggestionsError(null)
+
+    const timeoutId = setTimeout(() => {
+      void searchLocationSuggestions(trimmed)
+        .then((results) => {
+          if (suggestionRequestIdRef.current !== requestId) {
+            return
+          }
+          setSuggestions(results)
+          if (!results.length) {
+            setSuggestionsError(`No matches found for "${trimmed}".`)
+          }
+        })
+        .catch((err) => {
+          if (suggestionRequestIdRef.current !== requestId) {
+            return
+          }
+          const message = err instanceof Error ? err.message : 'Unable to suggest locations right now.'
+          setSuggestions([])
+          setSuggestionsError(message)
+        })
+        .finally(() => {
+          if (suggestionRequestIdRef.current === requestId) {
+            setSuggestionsLoading(false)
+          }
+        })
+    }, 200)
+
+    return () => {
+      clearTimeout(timeoutId)
+    }
+  }, [query, searchVisible])
+
+  useEffect(() => {
+    if (autoLocateAttemptedRef.current) {
+      return
+    }
+    autoLocateAttemptedRef.current = true
+    void handleUseLocation()
+  }, [])
 
   const errorMessage = error ?? geoError
 
@@ -105,12 +222,14 @@ function App() {
       const data = await fetchOptimisticForecast(searchQuery, requestedUnits)
       setForecast(data)
       setLastQuery(searchQuery)
+      setQuery(searchQuery)
       recordHistory({
         query: searchQuery,
         success: true,
         timestamp: Date.now(),
         locationLabel: data.locationLabel,
       })
+      setSearchVisible(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to load the forecast right now.'
       setError(message)
@@ -121,6 +240,7 @@ function App() {
         timestamp: Date.now(),
         errorMessage: message,
       })
+      setSearchVisible(true)
     } finally {
       setLoading(false)
     }
@@ -132,11 +252,6 @@ function App() {
       return
     }
     void runSearch(query, units)
-  }
-
-  const handleQuickPick = (preset: string) => {
-    setQuery(preset)
-    void runSearch(preset, units)
   }
 
   const handleUnitsChange = (nextUnits: Units) => {
@@ -163,6 +278,82 @@ function App() {
     void clearHistoryEntries()
   }
 
+  const handleSuggestionSelect = (suggestion: LocationSuggestion) => {
+    setQuery(suggestion.searchValue)
+    setSearchVisible(false)
+    setSuggestions([])
+    setSuggestionsError(null)
+    setSuggestionsLoading(false)
+    void runSearch(suggestion.searchValue, units)
+  }
+
+  const renderHighlightCard = (highlight: OptimisticHighlight) => {
+    const icon = highlightIconMap[highlight.id] ?? '✨'
+    const metricText = [highlight.metricLabel, highlight.metricValue].filter(Boolean).join(' · ')
+
+    return (
+      <View key={highlight.id} style={styles.highlightCard}>
+        <View style={styles.highlightHeaderRow}>
+          <View style={styles.highlightIconBubble}>
+            <Text style={styles.highlightIcon}>{icon}</Text>
+          </View>
+          <View style={styles.highlightHeaderTexts}>
+            <Text style={styles.highlightTitle}>{highlight.title}</Text>
+            {highlight.heroStatValue ? (
+              <Text style={styles.highlightHeroValue}>{highlight.heroStatValue}</Text>
+            ) : null}
+            {highlight.heroStatLabel ? (
+              <Text style={styles.highlightHeroLabel}>{highlight.heroStatLabel}</Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.highlightBodyText}>
+          <Text style={styles.highlightTakeaway}>{highlight.takeaway}</Text>
+        </View>
+        {metricText ? (
+          <Text style={styles.highlightFooter}>{metricText}</Text>
+        ) : null}
+      </View>
+    )
+  }
+
+  const renderHourlySection = () => {
+    const hours = forecast?.hourlyOutlook ?? []
+    if (!hours.length) {
+      return null
+    }
+
+    const temps = hours.map((hour) => hour.temperature)
+    const minTemp = Math.min(...temps)
+    const maxTemp = Math.max(...temps)
+    const tempRange = Math.max(maxTemp - minTemp, 1)
+
+    return (
+      <View style={styles.hourlySection}>
+        <Text style={styles.sectionLabel}>Next few hours</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hourlyScrollContent}
+        >
+          {hours.map((hour) => {
+            const normalized = (hour.temperature - minTemp) / tempRange
+            const barHeight = 40 + normalized * 80
+            const label = hour.time.toLocaleTimeString([], { hour: 'numeric' })
+
+            return (
+              <View key={hour.id} style={styles.hourlyColumn}>
+                <Text style={styles.hourlyTemp}>{Math.round(hour.temperature)}°</Text>
+                <View style={[styles.hourlyBar, { height: barHeight }]} />
+                <Text style={styles.hourlyLabel}>{label}</Text>
+              </View>
+            )
+          })}
+        </ScrollView>
+      </View>
+    )
+  }
+
   const runCoordsSearch = async (coords: Coordinates, labelHint?: string) => {
     setLoading(true)
     setError(null)
@@ -170,27 +361,25 @@ function App() {
 
     try {
       const place = await reverseGeocode(coords)
-      const labelParts = [place.name]
-      if (place.state) {
-        labelParts.push(place.state)
-      }
-      labelParts.push(place.country)
-      const queryLabel = labelHint ?? labelParts.join(', ')
+      const queryLabel = labelHint ?? formatUsLocationLabel(place)
 
       const data = await fetchOptimisticForecast(queryLabel, units)
       setForecast(data)
       setLastQuery(queryLabel)
+      setQuery(queryLabel)
       recordHistory({
         query: queryLabel,
         success: true,
         timestamp: Date.now(),
         locationLabel: data.locationLabel,
       })
+      setSearchVisible(false)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'We could not load your local forecast.'
       setError(message)
       setGeoError(message)
       setForecast(null)
+      setSearchVisible(true)
     } finally {
       setLoading(false)
     }
@@ -205,24 +394,22 @@ function App() {
       if (!granted) {
         setLoading(false)
         setGeoError('Permission denied. You can still search manually for any city or zip.')
+        setSearchVisible(true)
         return
       }
 
       const position = await Location.getCurrentPositionAsync({
         accuracy: Platform.OS === 'ios' ? Location.Accuracy.High : Location.Accuracy.Balanced,
       })
+      setSearchVisible(false)
       void runCoordsSearch({ lat: position.coords.latitude, lon: position.coords.longitude })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to determine your location.'
       setGeoError(message)
       setLoading(false)
+      setSearchVisible(true)
     }
   }
-
-  const unitsLabel = useMemo(
-    () => (units === 'metric' ? 'Metric (°C)' : 'Imperial (°F)'),
-    [units],
-  )
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -233,98 +420,119 @@ function App() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>Bright Side</Text>
-          <Text style={styles.tagline}>Flip every forecast into a reason to smile.</Text>
+          <View style={styles.brandLockup}>
+            <GradientText text="Bright" style={styles.brandWord} />
+            <GradientText text="Side" style={styles.brandWord} />
+          </View>
+          <GradientText text="Weather" style={styles.brandTag} />
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Find the bright side</Text>
-          <Text style={styles.cardDescription}>
-            Drop in any city, zip code, or landmark and we will surface the upbeat bits.
-          </Text>
+        {(searchVisible || !forecast) && (
+          <View style={styles.card}>
+            <View style={styles.searchHeaderRow}>
+              <Text style={styles.cardTitle}>Find the bright side</Text>
+              {forecast ? (
+                <TouchableOpacity onPress={() => setSearchVisible(false)}>
+                  <Text style={styles.dismissSearch}>Hide</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <Text style={styles.cardDescription}>
+              Drop in any city, zip code, or landmark and we will surface the upbeat bits.
+            </Text>
 
-          <View style={styles.formField}>
-            <Text style={styles.label}>Where should we look?</Text>
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="e.g. Seattle, WA or 94103"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-              returnKeyType="search"
-              onSubmitEditing={handleSearchSubmit}
-            />
-          </View>
+            <View style={styles.formField}>
+              <Text style={styles.label}>Where should we look?</Text>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="e.g. Louisville, KY or 40299"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+                returnKeyType="search"
+                onSubmitEditing={handleSearchSubmit}
+              />
+            </View>
 
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton, loading && styles.disabledButton]}
-              onPress={handleSearchSubmit}
-              disabled={loading}
-              accessibilityRole="button"
-            >
-              {loading ? (
-                <>
-                  <ActivityIndicator size="small" color="#ffffff" />
-                  <Text style={[styles.buttonText, styles.primaryButtonText]}>Curating optimism…</Text>
-                </>
-              ) : (
-                <Text style={[styles.buttonText, styles.primaryButtonText]}>Reveal the bright side</Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.button, styles.primaryButton, loading && styles.disabledButton]}
+                onPress={handleSearchSubmit}
+                disabled={loading}
+                accessibilityRole="button"
+              >
+                {loading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#ffffff" />
+                    <Text style={[styles.buttonText, styles.primaryButtonText]}>Curating optimism…</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.buttonText, styles.primaryButtonText]}>Reveal the bright side</Text>
+                )}
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]}
-              onPress={() => {
-                void handleUseLocation()
-              }}
-              disabled={loading}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.buttonText, styles.secondaryButtonText]}>Use my location</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[styles.button, styles.secondaryButton, loading && styles.disabledButton]}
+                onPress={() => {
+                  void handleUseLocation()
+                }}
+                disabled={loading}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Use my location</Text>
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.toggleGroup}>
-            {(['imperial', 'metric'] as Units[]).map((option) => {
-              const isSelected = option === units
-              return (
-                <TouchableOpacity
-                  key={option}
-                  style={[styles.toggleButton, isSelected && styles.toggleButtonSelected]}
-                  onPress={() => handleUnitsChange(option)}
-                  disabled={loading}
-                >
-                  <Text
-                    style={[
-                      styles.toggleText,
-                      isSelected ? styles.toggleTextSelected : undefined,
-                    ]}
+            <View style={styles.toggleGroup}>
+              {(['imperial', 'metric'] as Units[]).map((option) => {
+                const isSelected = option === units
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.toggleButton, isSelected && styles.toggleButtonSelected]}
+                    onPress={() => handleUnitsChange(option)}
+                    disabled={loading}
                   >
-                    {option === 'imperial' ? 'Fahrenheit (°F)' : 'Celsius (°C)'}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.toggleText,
+                        isSelected ? styles.toggleTextSelected : undefined,
+                      ]}
+                    >
+                      {option === 'imperial' ? 'Fahrenheit (°F)' : 'Celsius (°C)'}
+                    </Text>
                 </TouchableOpacity>
               )
             })}
-          </View>
-
-          <View style={styles.quickPicksRow}>
-            <Text style={styles.quickPickLabel}>Need inspiration?</Text>
-            <View style={styles.quickPills}>
-              {quickPicks.map((preset) => (
-                <TouchableOpacity
-                  key={preset}
-                  style={styles.quickPill}
-                  onPress={() => handleQuickPick(preset)}
-                  disabled={loading}
-                >
-                  <Text style={styles.quickPillText}>{preset.split(',')[0]}</Text>
-                </TouchableOpacity>
-              ))}
             </View>
+
+            {(suggestionsLoading || suggestions.length > 0 || suggestionsError) && (
+              <View style={styles.suggestionsContainer}>
+                {suggestionsLoading ? (
+                  <View style={styles.suggestionRow}>
+                    <ActivityIndicator size="small" color="#0f172a" />
+                    <Text style={styles.suggestionLoading}>Looking for matches…</Text>
+                  </View>
+                ) : suggestions.length > 0 ? (
+                  suggestions.map((suggestion) => (
+                    <TouchableOpacity
+                      key={`${suggestion.location.lat}:${suggestion.location.lon}`}
+                      style={styles.suggestionItem}
+                      onPress={() => handleSuggestionSelect(suggestion)}
+                      disabled={loading}
+                    >
+                      <Text style={styles.suggestionPrimary}>{suggestion.searchValue}</Text>
+                      <Text style={styles.suggestionSecondary}>Tap to search</Text>
+                    </TouchableOpacity>
+                  ))
+                ) : suggestionsError ? (
+                  <Text style={styles.suggestionError}>{suggestionsError}</Text>
+                ) : null}
+              </View>
+            )}
           </View>
-        </View>
+        )}
 
         {history.length > 0 && (
           <View style={styles.historyCard}>
@@ -392,9 +600,18 @@ function App() {
 
         {forecast ? (
           <View style={styles.forecastCard}>
-            <View style={styles.forecastHeader}>
-              <Text style={styles.forecastTitle}>{forecast.locationLabel}</Text>
-              <Text style={styles.forecastSubtitle}>{forecast.skySummary}</Text>
+            <View style={styles.forecastHeaderRow}>
+              <View style={styles.forecastHeader}>
+                <Text style={styles.forecastTitle}>{forecast.locationLabel}</Text>
+                <Text style={styles.forecastSubtitle}>{forecast.skySummary}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.changeButton}
+                onPress={() => setSearchVisible(true)}
+                disabled={loading}
+              >
+                <Text style={styles.changeButtonText}>Change</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.temperatureTile}>
@@ -418,42 +635,14 @@ function App() {
               </View>
             </View>
 
-            <View style={styles.highlightsGrid}>
-              {forecast.highlights.map((highlight) => (
-                <View key={highlight.id} style={styles.highlightCard}>
-                  <View style={styles.highlightCardBackground} aria-hidden />
-                  <View style={styles.highlightCardContent}>
-                    {(highlight.heroStatValue ?? highlight.heroStatLabel) && (
-                      <View style={styles.highlightHeroRow}>
-                        {highlight.heroStatValue ? (
-                          <Text style={styles.highlightHeroValue}>{highlight.heroStatValue}</Text>
-                        ) : null}
-                        {highlight.heroStatLabel ? (
-                          <Text style={styles.highlightHeroLabel}>{highlight.heroStatLabel}</Text>
-                        ) : null}
-                      </View>
-                    )}
-                    <View style={styles.highlightBody}>
-                      <Text style={styles.highlightTitle}>{highlight.title}</Text>
-                      <Text style={styles.highlightTakeaway}>{highlight.takeaway}</Text>
-                      {highlight.detail ? (
-                        <Text style={styles.highlightDetail}>{highlight.detail}</Text>
-                      ) : null}
-                    </View>
-                    {highlight.metricLabel && highlight.metricValue ? (
-                      <View style={styles.highlightMetricPill}>
-                        <Text style={styles.highlightMetricLabel}>{highlight.metricLabel}</Text>
-                        <Text style={styles.highlightMetricValue}>{highlight.metricValue}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-              ))}
-            </View>
+            {renderHourlySection()}
 
-            <Text style={styles.forecastFooter}>
-              Next snapshot around {formatTime(forecast.nextUpdate)} · Units: {unitsLabel}
-            </Text>
+            {highlightCards.length ? (
+              <View style={styles.highlightSection}>
+                {highlightCards.map(renderHighlightCard)}
+              </View>
+            ) : null}
+
           </View>
         ) : (
           <View style={styles.placeholderCard}>
@@ -485,19 +674,35 @@ const styles = StyleSheet.create({
   header: {
     marginTop: 24,
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
-  brand: {
-    fontSize: 32,
+  brandLockup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  brandWord: {
+    fontSize: 36,
     fontWeight: '900',
     letterSpacing: 4,
-    color: '#0f172a',
     textTransform: 'uppercase',
+    color: '#ffffff',
   },
-  tagline: {
-    fontSize: 16,
-    textAlign: 'center',
-    color: '#334155',
+  brandTag: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 8,
+    textTransform: 'uppercase',
+    color: '#ffffff',
+  },
+  gradientMask: {
+    color: '#000',
+    backgroundColor: 'transparent',
+  },
+  gradientContainer: {
+    paddingHorizontal: 4,
+  },
+  gradientFill: {
+    opacity: 0,
   },
   card: {
     backgroundColor: '#ffffff',
@@ -509,6 +714,16 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
     gap: 20,
+  },
+  searchHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dismissSearch: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   cardTitle: {
     fontSize: 24,
@@ -596,31 +811,83 @@ const styles = StyleSheet.create({
   toggleTextSelected: {
     color: '#0f172a',
   },
-  quickPicksRow: {
-    gap: 12,
-  },
-  quickPickLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1f2937',
-  },
-  quickPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  quickPill: {
-    borderRadius: 999,
+  suggestionsContainer: {
+    marginTop: 12,
     borderWidth: 1,
     borderColor: '#cbd5f5',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
   },
-  quickPillText: {
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  suggestionLoading: {
     fontSize: 13,
+    color: '#475569',
     fontWeight: '600',
-    color: '#1f2937',
+  },
+  suggestionItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    gap: 4,
+  },
+  suggestionPrimary: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  suggestionSecondary: {
+    fontSize: 12,
+    color: '#64748b',
+  },
+  suggestionError: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: '#b91c1c',
+    fontWeight: '600',
+  },
+  hourlySection: {
+    gap: 8,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#475569',
+  },
+  hourlyScrollContent: {
+    paddingVertical: 6,
+    paddingRight: 16,
+    flexDirection: 'row',
+    gap: 14,
+  },
+  hourlyColumn: {
+    width: 48,
+    alignItems: 'center',
+    gap: 6,
+  },
+  hourlyTemp: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  hourlyBar: {
+    width: 16,
+    borderRadius: 10,
+    backgroundColor: '#fb923c',
+  },
+  hourlyLabel: {
+    fontSize: 12,
+    color: '#64748b',
   },
   historyCard: {
     backgroundColor: '#ffffff',
@@ -747,8 +1014,15 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 7,
   },
+  forecastHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
   forecastHeader: {
     gap: 6,
+    flex: 1,
   },
   forecastTitle: {
     fontSize: 28,
@@ -766,6 +1040,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 20,
     padding: 20,
+  },
+  changeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    backgroundColor: '#e0f2fe',
+  },
+  changeButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1d4ed8',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   temperatureValue: {
     fontSize: 48,
@@ -790,94 +1079,80 @@ const styles = StyleSheet.create({
   tempExtremeSpacer: {
     marginTop: 12,
   },
-  highlightsGrid: {
+  highlightSection: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
   },
   highlightCard: {
-    position: 'relative',
-    overflow: 'hidden',
-    flexBasis: '48%',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
     backgroundColor: '#ffffff',
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     shadowColor: '#000000',
-    shadowOpacity: 0.07,
+    shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  highlightCardBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(224, 242, 254, 0.55)',
-  },
-  highlightCardContent: {
-    flex: 1,
-    padding: 20,
+    shadowRadius: 12,
+    elevation: 4,
+    flexBasis: '48%',
+    flexGrow: 1,
     gap: 12,
   },
-  highlightHeroRow: {
+  highlightHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    flexWrap: 'wrap',
-    gap: 6,
+    alignItems: 'center',
+    gap: 12,
+  },
+  highlightIconBubble: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e0f2fe',
+  },
+  highlightIcon: {
+    fontSize: 20,
+  },
+  highlightHeaderTexts: {
+    flex: 1,
+    gap: 2,
+  },
+  highlightTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   highlightHeroValue: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: '#0f172a',
   },
   highlightHeroLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    fontWeight: '600',
     color: '#64748b',
+    textTransform: 'uppercase',
   },
-  highlightBody: {
-    gap: 6,
+  highlightBodyText: {
     flexGrow: 1,
-  },
-  highlightTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
   },
   highlightTakeaway: {
     fontSize: 13,
+    fontWeight: '600',
     color: '#1e293b',
   },
-  highlightDetail: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  highlightMetricPill: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.25)',
-  },
-  highlightMetricLabel: {
+  highlightFooter: {
+    marginTop: 'auto',
     fontSize: 11,
-    color: '#475569',
     fontWeight: '600',
-  },
-  highlightMetricValue: {
-    fontSize: 12,
-    color: '#0f172a',
-    fontWeight: '700',
-  },
-  forecastFooter: {
-    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
     color: '#64748b',
-    textAlign: 'right',
   },
   placeholderCard: {
     backgroundColor: '#f8fafc',

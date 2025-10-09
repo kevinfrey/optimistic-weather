@@ -1,19 +1,31 @@
+import Constants from 'expo-constants'
+
 import type {
   ForecastEntry,
   ForecastResponse,
   GeoLocation,
   OptimisticForecast,
   OptimisticHighlight,
+  OptimisticExtendedOutlook,
+  OptimisticDailyOutlook,
+  OptimisticHourlyOutlook,
   Coordinates,
+  ExtendedForecastResponse,
+  DailyForecastEntry,
+  HourlyForecastEntry,
 } from '../types/weather'
 
 const API_BASE = 'https://api.openweathermap.org'
+const EXTENDED_OUTLOOK_REQUIRED_DAYS = 10
+const HOURLY_OUTLOOK_LIMIT = 12
+const EXTENDED_OUTLOOK_LIMITED_MESSAGE = 'Extended outlook limited by available data.'
+const EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE = 'Extended outlook unavailable for this location right now.'
 
 const regionDisplayNames = typeof Intl !== 'undefined' && 'DisplayNames' in Intl
   ? new Intl.DisplayNames(['en'], { type: 'region' })
   : null
 
-const US_STATE_CODE_TO_NAME = new Map<string, string>([
+export const US_STATE_CODE_TO_NAME = new Map<string, string>([
   ['AL', 'Alabama'],
   ['AK', 'Alaska'],
   ['AZ', 'Arizona'],
@@ -67,12 +79,21 @@ const US_STATE_CODE_TO_NAME = new Map<string, string>([
   ['DC', 'District of Columbia'],
 ])
 
-const US_STATE_NAME_TO_CODE = new Map<string, string>(
+export const US_STATE_NAME_TO_CODE = new Map<string, string>(
   Array.from(US_STATE_CODE_TO_NAME.entries()).map(([code, name]) => [name.toLowerCase(), code]),
 )
 
+const US_STATE_PRIORITY = new Map<string, number>([
+  ['CA', 1], ['TX', 2], ['FL', 3], ['NY', 4], ['PA', 5], ['IL', 6], ['OH', 7], ['GA', 8], ['NC', 9], ['MI', 10],
+  ['NJ', 11], ['VA', 12], ['WA', 13], ['AZ', 14], ['MA', 15], ['TN', 16], ['IN', 17], ['MO', 18], ['MD', 19], ['WI', 20],
+  ['CO', 21], ['MN', 22], ['SC', 23], ['AL', 24], ['LA', 25], ['KY', 26], ['OR', 27], ['OK', 28], ['CT', 29], ['UT', 30],
+  ['IA', 31], ['NV', 32], ['AR', 33], ['MS', 34], ['KS', 35], ['NM', 36], ['NE', 37], ['WV', 38], ['ID', 39], ['HI', 40],
+  ['NH', 41], ['ME', 42], ['MT', 43], ['RI', 44], ['DE', 45], ['SD', 46], ['ND', 47], ['AK', 48], ['VT', 49], ['WY', 50],
+])
+
 const assertApiKey = () => {
-  const key = process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY as string | undefined
+  const key = (Constants.expoConfig?.extra?.EXPO_PUBLIC_OPENWEATHER_API_KEY as string | undefined)
+    ?? (process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY as string | undefined)
   if (!key) {
     throw new Error('Missing OpenWeather API key. Set EXPO_PUBLIC_OPENWEATHER_API_KEY in your app config.')
   }
@@ -187,7 +208,7 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
     return false
   }
 
-  const scored: { option: GeoLocation; score: number }[] = options.map((option) => {
+  const scored: { option: GeoLocation; score: number; index: number }[] = options.map((option, index) => {
     const locationLabelParts = [option.name]
     if (option.state) {
       locationLabelParts.push(option.state)
@@ -198,6 +219,7 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
 
     const matchesCountryHint = matchesCountryFromOption(option.country)
     const matchesStateHint = matchesStateFromOption(option)
+    const isUsOption = option.country.toUpperCase() === 'US'
 
     let score = distance
     if (matchesCountryHint) {
@@ -209,12 +231,31 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
       score -= 25
     } else if (hasStateHints) {
       score += 15
+      if (isUsOption) {
+        score -= 10
+      } else {
+        score += 10
+      }
     }
 
-    return { option, score }
+    if (isUsOption) {
+      const stateLower = option.state?.toLowerCase()
+      const stateCode = stateLower ? (US_STATE_NAME_TO_CODE.get(stateLower) ?? option.state?.toUpperCase()) : undefined
+      if (stateCode) {
+        const rank = US_STATE_PRIORITY.get(stateCode as string) ?? 60
+        score -= Math.max(0, 60 - rank)
+      }
+    }
+
+    return { option, score, index }
   })
 
-  scored.sort((a, b) => a.score - b.score)
+  scored.sort((a, b) => {
+    if (a.score === b.score) {
+      return a.index - b.index
+    }
+    return a.score - b.score
+  })
   return scored[0]?.option ?? null
 }
 
@@ -260,6 +301,48 @@ const geocodeByZip = async (zip: string, country: string): Promise<GeoLocation |
   }
 }
 
+const filterUsLocations = (locations: GeoLocation[]): GeoLocation[] =>
+  locations.filter((location) => location.country?.toUpperCase() === 'US')
+
+export interface LocationSuggestion {
+  location: GeoLocation
+  searchValue: string
+}
+
+const buildLocationKey = (location: GeoLocation) => [
+  location.name.trim().toLowerCase(),
+  location.state?.trim().toLowerCase() ?? '',
+  location.country.trim().toUpperCase(),
+  location.lat,
+  location.lon,
+].join('|')
+
+const dedupeSuggestions = (items: LocationSuggestion[]): LocationSuggestion[] => {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = buildLocationKey(item.location)
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+export const formatUsLocationLabel = (location: GeoLocation): string => {
+  const parts = [location.name]
+  if (location.state) {
+    const normalizedState = US_STATE_NAME_TO_CODE.get(location.state.toLowerCase())
+    const stateCode = normalizedState
+      ? normalizedState.toUpperCase()
+      : location.state.length === 2
+        ? location.state.toUpperCase()
+        : location.state
+    parts.push(stateCode)
+  }
+  return parts.join(', ')
+}
+
 export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   const trimmedQuery = query.trim()
   if (!trimmedQuery) {
@@ -269,18 +352,21 @@ export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   const zipCandidate = ZIP_QUERY_REGEX.exec(trimmedQuery)
   if (zipCandidate) {
     const [, zip, country] = zipCandidate
-    const zipResult = await geocodeByZip(zip, (country ?? 'US').toUpperCase())
-    if (zipResult) {
-      return zipResult
+    const formattedCountry = (country ?? 'US').toUpperCase()
+    if (formattedCountry === 'US') {
+      const zipResult = await geocodeByZip(zip, formattedCountry)
+      if (zipResult) {
+        return zipResult
+      }
     }
   }
 
-  const primaryResults = await geocode(trimmedQuery)
+  const primaryResults = filterUsLocations(await geocode(trimmedQuery))
   let match = pickBestMatch(trimmedQuery, primaryResults)
 
   if (!match && trimmedQuery.includes(',')) {
     const [cityOnly] = trimmedQuery.split(',')
-    const fallbackResults = await geocode(cityOnly)
+    const fallbackResults = filterUsLocations(await geocode(cityOnly))
     match = pickBestMatch(cityOnly, fallbackResults)
   }
 
@@ -291,21 +377,44 @@ export const geocodeLocation = async (query: string): Promise<GeoLocation> => {
   return match
 }
 
-export const __internal = {
-  levenshteinDistance,
-  pickBestMatch,
-  geocodeByZip,
-  ZIP_QUERY_REGEX,
+const clampPopPercent = (value: number | undefined): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null
+  }
+  const ratio = Math.min(Math.max(value, 0), 1)
+  return Math.round(ratio * 100)
 }
 
-const fetchForecast = async (
+const toDateWithOffset = (timestamp: number | undefined, offsetSeconds: number): Date | undefined => {
+  if (typeof timestamp !== 'number' || Number.isNaN(timestamp)) {
+    return undefined
+  }
+  return new Date((timestamp + offsetSeconds) * 1000)
+}
+
+const fetchPrimaryDailyForecast = async (
   lat: number,
   lon: number,
   units: 'metric' | 'imperial',
-): Promise<ForecastResponse> => {
+): Promise<ExtendedForecastResponse | null> => {
   const apiKey = assertApiKey()
-  const url = `${API_BASE}/data/2.5/forecast?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`
-  return fetchJson<ForecastResponse>(url)
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    units,
+    exclude: 'current,minutely,alerts',
+    appid: apiKey,
+  })
+  const url = `${API_BASE}/data/3.0/onecall?${params.toString()}`
+
+  try {
+    return await fetchJson<ExtendedForecastResponse>(url)
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('Extended daily forecast unavailable:', error)
+    }
+    return null
+  }
 }
 
 const average = (values: number[]) => {
@@ -324,160 +433,426 @@ const buildSkySummary = (entry: ForecastEntry): string => {
 
   switch (condition) {
     case 'Clear':
-      return 'Sun-forward skies and bright horizons on deck.'
+      return cloudiness > 20
+        ? 'Sun-forward skies with a few photogenic clouds.'
+        : 'Sun-forward skies and bright horizons on deck.'
     case 'Clouds':
       return cloudiness > 70
-        ? 'Soft, filtered daylight keeps the vibe relaxed.'
-        : 'Blue sky breaks trade places with playful clouds.'
+        ? 'Soft gray canvas overhead—perfect for cozy plans or moody photo ops.'
+        : 'Filtered sunshine with plenty of bright breaks.'
     case 'Rain':
     case 'Drizzle':
-      return 'Nature is topping off the reservoirs—perfect excuse for a cozy plan.'
+      return 'Atmosphere on hydration duty—plan heroic coffee breaks between sprinkles.'
     case 'Thunderstorm':
-      return 'Electric skies bring drama—front-row seats from indoors highly encouraged.'
+      return 'Electric skies incoming—queue the dramatic soundtrack and indoor adventures.'
     case 'Snow':
-      return 'Fresh flurries dial up the magic—perfect for cocoa refills.'
-    case 'Mist':
-    case 'Fog':
-      return 'Hazy horizons invite slow moments and calm playlists.'
+      return 'Flurries add sparkle; layer up and embrace the hush.'
     default:
-      return 'Skies shifting with a friendly mix—embrace the surprises.'
+      return 'Skies leaning optimistic—run with it.'
   }
 }
 
 const buildHighlights = (
-  entries: ForecastEntry[],
+  horizon: ForecastEntry[],
   units: 'metric' | 'imperial',
+  timezoneOffsetSeconds: number,
 ): OptimisticHighlight[] => {
-  if (!entries.length) {
+  if (!horizon.length) {
     return []
   }
 
-  const midday = entries[Math.min(4, entries.length - 1)]
-  const evening = entries[Math.min(8, entries.length - 1)]
+  const precipitationVolumes = horizon.map((entry) => {
+    const rain = entry.rain?.['3h'] ?? 0
+    const snow = entry.snow?.['3h'] ?? 0
+    return rain + snow
+  })
 
-  const humidities = entries.map((entry) => entry.main.humidity)
-  const averageHumidity = Math.round(average(humidities))
+  const pops = horizon.map((entry) => entry.pop ?? 0)
 
-  const windSpeeds = entries.map((entry) => entry.wind.speed)
-  const averageWind = average(windSpeeds)
+  const wetBlocks = horizon.filter((entry, index) => {
+    const precipitationVolume = precipitationVolumes[index]
+    const wetWeather = entry.weather.some((condition) =>
+      ['Rain', 'Drizzle', 'Thunderstorm', 'Snow'].includes(condition.main),
+    )
+    const highPop = (entry.pop ?? 0) >= 0.4
+    return precipitationVolume > 0 || wetWeather || highPop
+  }).length
 
-  const visibilityValues = entries.map((entry) => entry.visibility)
-  const averageVisibility = average(visibilityValues)
+  const avgPopValue = pops.length ? average(pops) : 0
+  const dryShareFromPop = 1 - avgPopValue
+  const wetPenalty = 1 - wetBlocks / horizon.length
+  let drynessRatio = dryShareFromPop * Math.max(wetPenalty, 0)
+  drynessRatio = Math.max(0, Math.min(1, drynessRatio))
+  const avgDryness = Math.round(drynessRatio * 100)
+  const rainChancePercent = Math.round((1 - drynessRatio) * 100)
 
-  const chanceOfRain = Math.max(...entries.map((entry) => entry.pop ?? 0)) * 100
-  const roundedRainChance = Math.round(chanceOfRain)
-  const dryWindowPercent = Math.max(0, 100 - roundedRainChance)
+  const cloudOpenness = Math.round(average(horizon.map((entry) => 100 - (entry.clouds?.all ?? 0))))
+  const avgCloudCover = Math.round(average(horizon.map((entry) => entry.clouds?.all ?? 0)))
+  const first = horizon[0]
+  const humidity = first.main.humidity
+  const feelsGap = first.main.feels_like - first.main.temp
+  const visibilityMeters = first.visibility
+  const windSpeed = first.wind.speed
+  const gust = first.wind.gust
 
-  const visibilityText = units === 'imperial'
-    ? `${averageVisibility > 16093 ? '10+' : (averageVisibility / 1609.34).toFixed(1)} mi`
-    : `${averageVisibility > 10000 ? '10+' : (averageVisibility / 1000).toFixed(1)} km`
+  const isMetric = units === 'metric'
+  const visibilityValue = isMetric ? visibilityMeters / 1000 : visibilityMeters / 1609.34
+  const visibilityUnits = isMetric ? 'km' : 'mi'
+  const windValue = isMetric ? metersPerSecondToKph(windSpeed) : windSpeed * 2.237
+  const windUnits = isMetric ? 'km/h' : 'mph'
+  const gustValue = gust ? (isMetric ? metersPerSecondToKph(gust) : gust * 2.237) : undefined
+  const unitsSuffix = isMetric ? '°C' : '°F'
+  const feelsOffset = Math.round(feelsGap)
+  const feelsOffsetDisplay = `${Math.abs(feelsOffset)}${unitsSuffix}`
+  const feelsSignedDisplay = feelsOffset === 0
+    ? `0${unitsSuffix}`
+    : `${feelsOffset > 0 ? '+' : ''}${feelsOffset}${unitsSuffix}`
 
-  const windText = units === 'imperial'
-    ? `${(averageWind * 2.237).toFixed(1)} mph`
-    : `${metersPerSecondToKph(averageWind).toFixed(1)} km/h`
+  const formatTime = (timestamp: number) =>
+    new Date((timestamp + timezoneOffsetSeconds) * 1000).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
 
-  const highlights: OptimisticHighlight[] = [
-    {
-      id: 'sky-window',
-      title: 'Sun break window',
-      takeaway: buildSkySummary(midday),
-      detail: `Sweet spot around ${new Date(midday.dt * 1000).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      })}.`,
-      heroStatValue: new Date(midday.dt * 1000).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-      heroStatLabel: 'Next pop of sun',
-    },
-    {
-      id: 'evening-vibes',
-      title: 'Evening vibes',
-      takeaway: buildSkySummary(evening),
-      detail: 'Line up your golden-hour stroll or night-in playlist.',
-      heroStatValue: new Date(evening.dt * 1000).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit',
-      }),
-      heroStatLabel: 'Evening outlook',
-    },
-    {
-      id: 'humidity-perk',
-      title: 'Humidity perks',
-      takeaway: averageHumidity < 40
-        ? 'Crisp air keeps everything feeling light.'
-        : 'Moisture in the air keeps skin glowing and plants thrilled.',
-      heroStatValue: `${averageHumidity}%`,
-      heroStatLabel: 'Avg humidity',
-      metricLabel: 'Avg humidity',
-      metricValue: `${averageHumidity}%`,
-    },
-    {
+  const highlights: OptimisticHighlight[] = []
+
+  highlights.push(
+    avgDryness >= 55
+      ? {
+          id: 'dryness',
+          title: 'Dry Skies Bias',
+          takeaway: `${avgDryness}% odds you stay splash-free.`,
+          heroStatValue: `${avgDryness}%`,
+          heroStatLabel: 'Dry skies odds',
+          metricLabel: 'Rain chance',
+          metricValue: `${rainChancePercent}%`,
+        }
+      : {
+          id: 'refresh',
+          title: 'Sky Refills Incoming',
+          takeaway: `${avgDryness}% dry-window potential between the refills.`,
+          heroStatValue: `${avgDryness}%`,
+          heroStatLabel: 'Dry window odds',
+          metricLabel: 'Rain chance',
+          metricValue: `${rainChancePercent}%`,
+        },
+  )
+
+  highlights.push({
+    id: 'clouds',
+    title: 'Face Melt Factor',
+    takeaway: `${cloudOpenness}% odds the sun lands a cameo worth the SPF.`,
+    heroStatValue: `${cloudOpenness}%`,
+    heroStatLabel: 'Sun splash',
+    metricLabel: 'Avg cloud cover',
+    metricValue: `${avgCloudCover}%`,
+  })
+
+  if (Math.abs(feelsGap) <= 1.5) {
+    highlights.push({
+      id: 'feels-like',
+      title: 'Comfort Index',
+      takeaway: 'Feels-like temps match the actual read—no wardrobe curveballs.',
+      heroStatValue: feelsOffsetDisplay,
+      heroStatLabel: 'Feels diff',
+      metricLabel: 'Feels difference',
+      metricValue: feelsSignedDisplay,
+    })
+  } else if (feelsGap < 0) {
+    highlights.push({
+      id: 'cooler',
+      title: 'Built-In Breeze',
+      takeaway: `Feels about ${Math.abs(feelsOffset)}° cooler than the thermometer—prime for active plans.`,
+      heroStatValue: feelsOffsetDisplay,
+      heroStatLabel: 'Feels cooler',
+      metricLabel: 'Feels difference',
+      metricValue: feelsSignedDisplay,
+    })
+  } else {
+    highlights.push({
+      id: 'warmer',
+      title: 'Cozy Warmth',
+      takeaway: `Feels around ${feelsOffset}° warmer—nature's heated blanket.`,
+      heroStatValue: feelsOffsetDisplay,
+      heroStatLabel: 'Feels warmer',
+      metricLabel: 'Feels difference',
+      metricValue: feelsSignedDisplay,
+    })
+  }
+
+  highlights.push({
+    id: 'hydration',
+    title: 'Humidity Bonus',
+    takeaway: `${humidity}% humidity means houseplants and skin stay happily hydrated.`,
+    heroStatValue: `${humidity}%`,
+    heroStatLabel: 'Humidity',
+    metricLabel: 'Humidity',
+    metricValue: `${humidity}%`,
+  })
+
+  if (visibilityMeters) {
+    highlights.push({
       id: 'visibility',
-      title: 'Visibility outlook',
-      takeaway: averageVisibility > 8000
+      title: 'Long-Range Views',
+      takeaway: visibilityValue > (isMetric ? 10 : 6)
         ? 'Clear views ahead—perfect for scenic detours.'
         : 'Soft horizon today—lean into indoor comforts.',
-      heroStatValue: visibilityText,
-      heroStatLabel: 'Avg visibility',
-      metricLabel: 'Avg visibility',
-      metricValue: visibilityText,
-    },
-    {
-      id: 'wind',
-      title: 'Comfort breeze',
-      takeaway: averageWind < 3
-        ? 'Barely a breeze—plan the rooftop hangout.'
-        : 'A gentle flow keeps things fresh without hat drama.',
-      heroStatValue: windText,
-      heroStatLabel: 'Avg wind',
-      metricLabel: 'Avg wind',
-      metricValue: windText,
-    },
-    {
-      id: 'chance-of-rain',
-      title: 'Chance of rain',
-      takeaway: dryWindowPercent > 0
-        ? `${dryWindowPercent}% shot to dart outside between refills.`
-        : 'Atmosphere on hydration duty—channel the cozy indoor energy.',
-      heroStatValue: `${dryWindowPercent}%`,
-      heroStatLabel: 'Dry window odds',
-      metricLabel: 'Rain potential',
-      metricValue: `${roundedRainChance}%`,
-    },
-  ]
+      heroStatValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
+      heroStatLabel: 'Visibility',
+      metricLabel: 'Visibility',
+      metricValue: `${visibilityValue.toFixed(1)} ${visibilityUnits}`,
+    })
+  }
+
+  const gentleBreezeThreshold = isMetric ? 25 : 15.5
+  const breezy = windValue <= gentleBreezeThreshold
+
+  highlights.push(
+    breezy
+      ? {
+          id: 'breeze',
+          title: 'Friendly Breeze',
+          takeaway: `${windValue.toFixed(1)} ${windUnits} winds keep the air feeling fresh.`,
+          heroStatValue: `${windValue.toFixed(1)} ${windUnits}`,
+          heroStatLabel: 'Wind speed',
+          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
+          metricValue: gustValue
+            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
+            : `${windValue.toFixed(1)} ${windUnits}`,
+        }
+      : {
+          id: 'wind-energy',
+          title: 'Wind Energy Mode',
+          takeaway: `${windValue.toFixed(1)} ${windUnits} winds—renewable energy fans, rejoice!`,
+          heroStatValue: `${windValue.toFixed(1)} ${windUnits}`,
+          heroStatLabel: 'Wind speed',
+          metricLabel: gustValue ? 'Wind / gust' : 'Wind speed',
+          metricValue: gustValue
+            ? `${windValue.toFixed(1)} / ${gustValue.toFixed(1)} ${windUnits}`
+            : `${windValue.toFixed(1)} ${windUnits}`,
+        },
+  )
 
   return highlights
 }
 
+const buildExtendedOutlook = (
+  dailyEntries: DailyForecastEntry[] | undefined,
+  timezoneOffsetSeconds: number,
+): OptimisticDailyOutlook[] => {
+  if (!dailyEntries?.length) {
+    return []
+  }
+
+  return dailyEntries
+    .filter((entry): entry is DailyForecastEntry =>
+      !!entry
+      && typeof entry.temp?.max === 'number'
+      && !Number.isNaN(entry.temp.max)
+      && typeof entry.temp?.min === 'number'
+      && !Number.isNaN(entry.temp.min),
+    )
+    .slice(0, 10)
+    .map((entry) => {
+      const primary = entry.weather?.[0]
+      const dayAverage = typeof entry.temp.day === 'number'
+        ? entry.temp.day
+        : (entry.temp.max + entry.temp.min) / 2
+
+      return {
+        date: new Date((entry.dt + timezoneOffsetSeconds) * 1000),
+        high: entry.temp.max,
+        low: entry.temp.min,
+        dayAverage,
+        precipitationChancePercent: clampPopPercent(entry.pop),
+        condition: primary?.main ?? 'Clear',
+        description: primary?.description ?? primary?.main ?? 'Clear skies',
+        sunrise: toDateWithOffset(entry.sunrise, timezoneOffsetSeconds),
+        sunset: toDateWithOffset(entry.sunset, timezoneOffsetSeconds),
+        source: 'onecall',
+      }
+    })
+}
+
+const buildHourlyOutlook = (
+  hourlyEntries: HourlyForecastEntry[] | undefined,
+  timezoneOffsetSeconds: number,
+): OptimisticHourlyOutlook[] => {
+  if (!hourlyEntries?.length) {
+    return []
+  }
+
+  return hourlyEntries
+    .filter((entry): entry is HourlyForecastEntry => typeof entry?.temp === 'number' && !Number.isNaN(entry.temp))
+    .slice(0, HOURLY_OUTLOOK_LIMIT)
+    .map((entry) => {
+      const primary = entry.weather?.[0]
+
+      return {
+        id: `hour-${entry.dt}`,
+        time: new Date((entry.dt + timezoneOffsetSeconds) * 1000),
+        temperature: entry.temp,
+        feelsLike: typeof entry.feels_like === 'number' ? entry.feels_like : entry.temp,
+        precipitationChancePercent: clampPopPercent(entry.pop),
+        condition: primary?.main ?? 'Clear',
+        description: primary?.description ?? primary?.main ?? 'Clear skies',
+        icon: primary?.icon,
+      }
+    })
+}
+
+export const __internal = {
+  levenshteinDistance,
+  pickBestMatch,
+  geocodeByZip,
+  ZIP_QUERY_REGEX,
+  US_STATE_CODE_TO_NAME,
+  US_STATE_NAME_TO_CODE,
+  buildExtendedOutlook,
+  buildHourlyOutlook,
+}
+
+const fetchForecast = async (
+  lat: number,
+  lon: number,
+  units: 'metric' | 'imperial',
+): Promise<ForecastResponse> => {
+  const apiKey = assertApiKey()
+  const url = `${API_BASE}/data/2.5/forecast?lat=${lat}&lon=${lon}&units=${units}&appid=${apiKey}`
+  return fetchJson<ForecastResponse>(url)
+}
+
+const fetchDailyForecast = async (
+  lat: number,
+  lon: number,
+  units: 'metric' | 'imperial',
+): Promise<ExtendedForecastResponse | null> => {
+  const primary = await fetchPrimaryDailyForecast(lat, lon, units)
+  if (primary?.daily?.length && primary.daily.length >= EXTENDED_OUTLOOK_REQUIRED_DAYS) {
+    return primary
+  }
+
+  return primary
+}
+
+const averageArray = (values: number[]) => average(values)
+
+export const searchLocationSuggestions = async (query: string): Promise<LocationSuggestion[]> => {
+  const trimmedQuery = query.trim()
+  if (trimmedQuery.length < 2) {
+    return []
+  }
+
+  const suggestions: LocationSuggestion[] = []
+
+  const zipCandidate = ZIP_QUERY_REGEX.exec(trimmedQuery)
+  if (zipCandidate) {
+    const [, zip, rawCountry] = zipCandidate
+    const country = (rawCountry ?? 'US').toUpperCase()
+    if (country === 'US') {
+      const zipResult = await geocodeByZip(zip, country)
+      if (zipResult) {
+        suggestions.push({
+          location: zipResult,
+          searchValue: formatUsLocationLabel(zipResult),
+        })
+      }
+    }
+  }
+
+  const primaryResults = filterUsLocations(await geocode(trimmedQuery))
+  const bestPrimary = pickBestMatch(trimmedQuery, primaryResults)
+  if (bestPrimary) {
+    suggestions.push({ location: bestPrimary, searchValue: formatUsLocationLabel(bestPrimary) })
+    primaryResults.forEach((result) => {
+      if (result !== bestPrimary) {
+        suggestions.push({ location: result, searchValue: formatUsLocationLabel(result) })
+      }
+    })
+  } else {
+    primaryResults.forEach((result) => {
+      suggestions.push({ location: result, searchValue: formatUsLocationLabel(result) })
+    })
+  }
+
+  if (trimmedQuery.includes(',')) {
+    const [cityOnly] = trimmedQuery.split(',')
+    const fallbackQuery = cityOnly.trim()
+    if (fallbackQuery.length >= 2 && fallbackQuery.toLowerCase() !== trimmedQuery.toLowerCase()) {
+      const fallbackResults = filterUsLocations(await geocode(fallbackQuery))
+      fallbackResults.forEach((result) => {
+        suggestions.push({ location: result, searchValue: formatUsLocationLabel(result) })
+      })
+    }
+  }
+
+  return dedupeSuggestions(suggestions).slice(0, 5)
+}
+
 export const fetchOptimisticForecast = async (
   query: string,
-  units: 'metric' | 'imperial',
+  units: 'metric' | 'imperial' = 'imperial',
 ): Promise<OptimisticForecast> => {
   const location = await geocodeLocation(query)
   const forecast = await fetchForecast(location.lat, location.lon, units)
-  if (!forecast.list.length) {
-    throw new Error('No forecast data available right now. Try again soon!')
-  }
+  const extendedResponse = await fetchDailyForecast(location.lat, location.lon, units)
+  const horizon = forecast.list.slice(0, 8)
+  const first = horizon[0]
+  const temps = horizon.map((entry) => entry.main.temp)
 
-  const current = forecast.list[0]
-  const locationLabelParts = [forecast.city.name]
-  if (forecast.city.country) {
-    locationLabelParts.push(forecast.city.country)
+  const temperature = {
+    current: first.main.temp,
+    feelsLike: first.main.feels_like,
+    high: Math.max(...temps),
+    low: Math.min(...temps),
+    units,
+  } as const
+
+  const skySummary = buildSkySummary(first)
+  const highlights = buildHighlights(horizon, units, forecast.city.timezone)
+
+  let extendedOutlook: OptimisticExtendedOutlook | undefined
+  let hourlyOutlook: OptimisticHourlyOutlook[] | undefined
+  if (extendedResponse) {
+    const days = buildExtendedOutlook(extendedResponse.daily, extendedResponse.timezone_offset ?? 0)
+    if (days.length) {
+      const isComplete = days.length >= EXTENDED_OUTLOOK_REQUIRED_DAYS
+      extendedOutlook = {
+        days,
+        isComplete,
+        message: isComplete ? undefined : EXTENDED_OUTLOOK_LIMITED_MESSAGE,
+      }
+    } else {
+      extendedOutlook = {
+        days: [],
+        isComplete: false,
+        message: EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE,
+      }
+    }
+
+    const hourlyEntries = extendedResponse.hourly
+    if (hourlyEntries?.length) {
+      hourlyOutlook = buildHourlyOutlook(hourlyEntries, extendedResponse.timezone_offset ?? 0)
+    }
+  } else {
+    extendedOutlook = {
+      days: [],
+      isComplete: false,
+      message: EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE,
+    }
   }
 
   return {
-    locationLabel: locationLabelParts.join(', '),
-    nextUpdate: new Date(current.dt * 1000 + 1000 * 60 * 60),
-    temperature: {
-      current: current.main.temp,
-      feelsLike: current.main.feels_like,
-      high: Math.max(...forecast.list.slice(0, 8).map((entry) => entry.main.temp_max)),
-      low: Math.min(...forecast.list.slice(0, 8).map((entry) => entry.main.temp_min)),
-      units,
+    locationLabel: formatUsLocationLabel({ ...location, country: 'US' }),
+    nextUpdate: new Date((first.dt + forecast.city.timezone) * 1000),
+    temperature,
+    skySummary,
+    highlights,
+    extendedOutlook,
+    hourlyOutlook,
+    coordinates: {
+      lat: location.lat,
+      lon: location.lon,
     },
-    skySummary: buildSkySummary(current),
-    highlights: buildHighlights(forecast.list.slice(0, 12), units),
   }
 }
