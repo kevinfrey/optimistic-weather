@@ -23,6 +23,7 @@ import type {
   OptimisticForecast,
   SearchHistoryEntry,
 } from '@/types/weather'
+import type { OptimisticHighlight } from '@/types/weather'
 import type { LocationSuggestion } from '@/services/openWeather'
 import {
   clearHistoryEntries,
@@ -305,7 +306,10 @@ function App() {
     highlight.id === 'clouds'
     || highlight.heroStatLabel?.toLowerCase().includes('sun splash'),
   )
-  const highlightIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  const highlightIconMap: Record<string, ComponentType<{ className?: string }>> = {
+    dryness: UmbrellaOff,
+    refresh: UmbrellaOff,
+    clouds: SunMedium,
     'feels-like': ThermometerSun,
     cooler: ThermometerSun,
     warmer: ThermometerSun,
@@ -325,6 +329,52 @@ function App() {
         return Boolean(highlightIconMap[highlight.id])
       })
     : []
+
+  const highlightCards: OptimisticHighlight[] = []
+  if (drynessHighlight) {
+    highlightCards.push(drynessHighlight)
+  }
+  if (faceMeltHighlight) {
+    highlightCards.push(faceMeltHighlight)
+  }
+  if (secondaryHighlights.length) {
+    highlightCards.push(...secondaryHighlights)
+  }
+
+  const renderHighlightCard = (highlight: OptimisticHighlight) => {
+    const Icon = highlightIconMap[highlight.id] ?? ThermometerSun
+    const metricText = [highlight.metricLabel, highlight.metricValue].filter(Boolean).join(' · ')
+
+    return (
+      <motion.div
+        key={highlight.id}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 160, damping: 20 }}
+        className="flex h-full flex-col gap-3 rounded-3xl border border-white/70 bg-white/85 p-5 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.45)] transition hover:-translate-y-0.5 hover:shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 via-sky-100 to-white text-sky-600">
+            <Icon className="h-5 w-5" aria-hidden />
+          </span>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{highlight.title}</p>
+            {highlight.heroStatValue ? (
+              <p className="text-2xl font-semibold text-slate-900">{highlight.heroStatValue}</p>
+            ) : null}
+            {highlight.heroStatLabel ? (
+              <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">{highlight.heroStatLabel}</p>
+            ) : null}
+          </div>
+        </div>
+        <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
+        {highlight.detail ? <p className="text-xs text-slate-500">{highlight.detail}</p> : null}
+        {metricText ? (
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">{metricText}</p>
+        ) : null}
+      </motion.div>
+    )
+  }
 
   const runCoordsSearch = useCallback(async (coords: Coordinates, labelHint?: string) => {
     setLoading(true)
@@ -457,8 +507,17 @@ function App() {
     <div className="relative min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/70 to-amber-50/40">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-16">
         <header className="space-y-3 text-left sm:text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Optimistic outlook</p>
-          <h1 className="text-4xl font-semibold text-slate-900 sm:text-5xl">Bright Side</h1>
+          <div className="flex justify-start sm:justify-center">
+            <span className="relative inline-flex items-center justify-center text-4xl font-black uppercase tracking-[0.4em] text-transparent sm:text-5xl">
+              <span
+                className="absolute inset-0 -scale-x-100 transform bg-gradient-to-r from-[#ff6ec7] via-[#ffb347] to-[#32fff0] opacity-80 blur-md"
+                aria-hidden
+              />
+              <span className="relative bg-gradient-to-r from-[#ff6ec7] via-[#ffdd55] to-[#32fff0] bg-clip-text drop-shadow-[0_0_18px_rgba(255,136,206,0.55)]">
+                Bright Side
+              </span>
+            </span>
+          </div>
           <p className="mx-auto max-w-2xl text-base text-slate-600 sm:text-lg">
             Flip every forecast into a reason to smile with cards that celebrate the sunnier details.
           </p>
@@ -746,105 +805,14 @@ function App() {
                   <HourlyCarousel hours={forecast.hourlyOutlook} units={units} />
                 ) : null}
 
-                {(drynessHighlight || faceMeltHighlight) ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {drynessHighlight ? (
-                      <motion.div
-                        key={drynessHighlight.id}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ type: 'spring', stiffness: 160, damping: 20 }}
-                        className="flex items-start gap-3 rounded-3xl border border-white/70 bg-white/85 p-4 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.45)]"
-                      >
-                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-100 via-amber-100 to-white text-sky-600">
-                          <UmbrellaOff className="h-5 w-5" aria-hidden />
-                        </span>
-                        <div className="space-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Dry Skies Bias</p>
-                          <p className="text-xl font-semibold text-slate-900">{drynessHighlight.heroStatValue ?? drynessHighlight.metricValue ?? '--'}</p>
-                          <p className="text-xs text-slate-500">{drynessHighlight.takeaway ?? 'High odds of staying splash-free.'}</p>
-                          {drynessHighlight.metricValue ? (
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                              Rain chance · {drynessHighlight.metricValue}
-                            </p>
-                          ) : null}
-                        </div>
-                      </motion.div>
-                    ) : null}
-
-                    {faceMeltHighlight ? (
-                      <motion.div
-                        key={faceMeltHighlight.id}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ type: 'spring', stiffness: 160, damping: 20 }}
-                        className="flex items-start gap-3 rounded-3xl border border-white/70 bg-white/85 p-4 shadow-[0_18px_38px_-28px_rgba(15,23,42,0.45)]"
-                      >
-                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 via-orange-100 to-white text-amber-500">
-                          <SunMedium className="h-5 w-5" aria-hidden />
-                        </span>
-                        <div className="space-y-1">
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Face Melt Factor</p>
-                          <p className="text-xl font-semibold text-slate-900">{faceMeltHighlight.heroStatValue ?? faceMeltHighlight.metricValue ?? '--'}</p>
-                          <p className="text-xs text-slate-500">{faceMeltHighlight.takeaway ?? 'Sun cameo odds currently glowing.'}</p>
-                          {faceMeltHighlight.metricValue ? (
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                              Avg cloud cover · {faceMeltHighlight.metricValue}
-                            </p>
-                          ) : null}
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {secondaryHighlights.length ? (
+                {highlightCards.length ? (
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {secondaryHighlights.map((highlight) => {
-                      const Icon = highlightIconMap[highlight.id] ?? ThermometerSun
-                      return (
-                        <motion.div
-                          key={highlight.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ type: 'spring', stiffness: 160, damping: 20 }}
-                          className="flex h-full flex-col gap-3 rounded-3xl border border-white/70 bg-white/85 p-5 shadow-[0_18px_40px_-32px_rgba(15,23,42,0.45)] transition hover:-translate-y-0.5 hover:shadow-xl"
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-100 via-sky-100 to-white text-sky-600">
-                              <Icon className="h-5 w-5" aria-hidden />
-                            </span>
-                            <div className="space-y-1">
-                              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{highlight.title}</p>
-                              {highlight.heroStatValue ? (
-                                <p className="text-2xl font-semibold text-slate-900">{highlight.heroStatValue}</p>
-                              ) : null}
-                              {highlight.heroStatLabel ? (
-                                <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">{highlight.heroStatLabel}</p>
-                              ) : null}
-                            </div>
-                          </div>
-                          <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
-                          {highlight.detail ? (
-                            <p className="text-xs text-slate-500">{highlight.detail}</p>
-                          ) : null}
-                          {highlight.metricLabel && highlight.metricValue ? (
-                            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                              {highlight.metricLabel} · {highlight.metricValue}
-                            </p>
-                          ) : null}
-                        </motion.div>
-                      )
-                    })}
+                    {highlightCards.map(renderHighlightCard)}
                   </div>
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <h3 className="text-xl font-semibold text-slate-900">Coming up</h3>
-                  <p className="text-sm text-slate-500">Pick a view to explore the optimism.</p>
-                </div>
+              <div className="flex flex-wrap items-start justify-end gap-4">
                 <ToggleGroup
                   type="single"
                   value={activePanel ?? ''}
@@ -886,11 +854,8 @@ function App() {
                   isLoading={loading}
                 />
               ) : null}
-              </CardContent>
-              <CardFooter className="justify-end text-xs text-slate-500">
-                Next snapshot around {formatTime(forecast.nextUpdate)} · Units: {unitsLabel}
-              </CardFooter>
-            </Card>
+            </CardContent>
+          </Card>
           </motion.div>
         ) : (
           <Card className="border-dashed border-slate-300 bg-white/70 backdrop-blur">
