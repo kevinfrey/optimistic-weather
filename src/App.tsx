@@ -349,10 +349,12 @@ function App() {
             ) : null}
           </div>
         </div>
-        <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
-        {highlight.detail ? <p className="text-xs text-slate-500">{highlight.detail}</p> : null}
+        <div className="flex min-h-[60px] flex-col gap-2 text-left text-slate-500">
+          <p className="text-sm font-medium text-slate-700">{highlight.takeaway}</p>
+          {highlight.detail ? <p className="text-xs text-slate-500">{highlight.detail}</p> : null}
+        </div>
         {metricText ? (
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">{metricText}</p>
+          <p className="mt-auto text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">{metricText}</p>
         ) : null}
       </motion.div>
     )

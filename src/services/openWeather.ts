@@ -83,6 +83,14 @@ export const US_STATE_NAME_TO_CODE = new Map<string, string>(
   Array.from(US_STATE_CODE_TO_NAME.entries()).map(([code, name]) => [name.toLowerCase(), code]),
 )
 
+const US_STATE_PRIORITY = new Map<string, number>([
+  ['CA', 1], ['TX', 2], ['FL', 3], ['NY', 4], ['PA', 5], ['IL', 6], ['OH', 7], ['GA', 8], ['NC', 9], ['MI', 10],
+  ['NJ', 11], ['VA', 12], ['WA', 13], ['AZ', 14], ['MA', 15], ['TN', 16], ['IN', 17], ['MO', 18], ['MD', 19], ['WI', 20],
+  ['CO', 21], ['MN', 22], ['SC', 23], ['AL', 24], ['LA', 25], ['KY', 26], ['OR', 27], ['OK', 28], ['CT', 29], ['UT', 30],
+  ['IA', 31], ['NV', 32], ['AR', 33], ['MS', 34], ['KS', 35], ['NM', 36], ['NE', 37], ['WV', 38], ['ID', 39], ['HI', 40],
+  ['NH', 41], ['ME', 42], ['MT', 43], ['RI', 44], ['DE', 45], ['SD', 46], ['ND', 47], ['AK', 48], ['VT', 49], ['WY', 50],
+])
+
 const assertApiKey = () => {
   const key = import.meta.env.VITE_OPENWEATHER_API_KEY as string | undefined
   if (!key) {
@@ -199,7 +207,7 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
     return false
   }
 
-  const scored: { option: GeoLocation; score: number }[] = options.map((option) => {
+  const scored: { option: GeoLocation; score: number; index: number }[] = options.map((option, index) => {
     const locationLabelParts = [option.name]
     if (option.state) {
       locationLabelParts.push(option.state)
@@ -229,10 +237,24 @@ const pickBestMatch = (query: string, options: GeoLocation[]): GeoLocation | nul
       }
     }
 
-    return { option, score }
+    if (isUsOption) {
+      const stateLower = option.state?.toLowerCase()
+      const stateCode = stateLower ? (US_STATE_NAME_TO_CODE.get(stateLower) ?? option.state?.toUpperCase()) : undefined
+      if (stateCode) {
+        const rank = US_STATE_PRIORITY.get(stateCode as string) ?? 60
+        score -= Math.max(0, 60 - rank)
+      }
+    }
+
+    return { option, score, index }
   })
 
-  scored.sort((a, b) => a.score - b.score)
+  scored.sort((a, b) => {
+    if (a.score === b.score) {
+      return a.index - b.index
+    }
+    return a.score - b.score
+  })
   return scored[0]?.option ?? null
 }
 
@@ -318,7 +340,7 @@ export const searchLocationSuggestions = async (query: string): Promise<Location
       if (zipResult) {
         suggestions.push({
           location: zipResult,
-          searchValue: zip,
+          searchValue: formatUsLocationLabel(zipResult),
         })
       }
     }
