@@ -89,12 +89,21 @@ export interface DailyForecastEntry {
   snow?: number
 }
 
+export interface HourlyForecastEntry {
+  dt: number
+  temp: number
+  feels_like: number
+  weather?: ForecastWeather[]
+  pop?: number
+}
+
 export interface ExtendedForecastResponse {
   lat: number
   lon: number
   timezone: string
   timezone_offset: number
   daily: DailyForecastEntry[]
+  hourly?: HourlyForecastEntry[]
 }
 
 export interface LegacyDailyForecastEntry {
@@ -146,6 +155,7 @@ export interface OptimisticForecast {
   skySummary: string
   highlights: OptimisticHighlight[]
   extendedOutlook?: OptimisticExtendedOutlook
+  hourlyOutlook?: OptimisticHourlyOutlook[]
   coordinates: Coordinates
 }
 
@@ -180,4 +190,15 @@ export interface OptimisticExtendedOutlook {
   days: OptimisticDailyOutlook[]
   isComplete: boolean
   message?: string
+}
+
+export interface OptimisticHourlyOutlook {
+  id: string
+  time: Date
+  temperature: number
+  feelsLike: number
+  precipitationChancePercent: number | null
+  condition: string
+  description: string
+  icon?: string
 }

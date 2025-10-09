@@ -6,15 +6,18 @@ import type {
   OptimisticHighlight,
   OptimisticExtendedOutlook,
   OptimisticDailyOutlook,
+  OptimisticHourlyOutlook,
   Coordinates,
   ExtendedForecastResponse,
   DailyForecastEntry,
+  HourlyForecastEntry,
   LegacyDailyForecastResponse,
   LegacyDailyForecastEntry,
 } from '../types/weather'
 
 const API_BASE = 'https://api.openweathermap.org'
 const EXTENDED_OUTLOOK_REQUIRED_DAYS = 10
+const HOURLY_OUTLOOK_LIMIT = 12
 const EXTENDED_OUTLOOK_LIMITED_MESSAGE = 'Extended outlook limited by available data.'
 const EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE = 'Extended outlook unavailable for this location right now.'
 
@@ -240,7 +243,105 @@ const geocode = async (query: string): Promise<GeoLocation[]> => {
   return fetchJson<GeoLocation[]>(url)
 }
 
-const ZIP_QUERY_REGEX = /^([A-Za-z0-9-]{3,10})(?:\s*,\s*([A-Za-z]{2}))?$/
+const ZIP_QUERY_REGEX = /^(?=.*\d)([A-Za-z0-9-]{3,10})(?:\s*,\s*([A-Za-z]{2}))?$/
+
+const buildLocationKey = (location: GeoLocation) => [
+  location.name.trim().toLowerCase(),
+  location.state?.trim().toLowerCase() ?? '',
+  location.country.trim().toUpperCase(),
+  location.lat,
+  location.lon,
+].join('|')
+
+const dedupeLocations = (locations: GeoLocation[]): GeoLocation[] => {
+  const seen = new Set<string>()
+  return locations.filter((location) => {
+    const key = buildLocationKey(location)
+
+    if (seen.has(key)) {
+      return false
+    }
+
+    seen.add(key)
+    return true
+  })
+}
+
+export interface LocationSuggestion {
+  location: GeoLocation
+  searchValue: string
+}
+
+const formatSearchValue = (location: GeoLocation) => {
+  const parts = [location.name]
+  if (location.state) {
+    parts.push(location.state)
+  }
+  parts.push(location.country)
+  return parts.join(', ')
+}
+
+const dedupeSuggestions = (items: LocationSuggestion[]): LocationSuggestion[] => {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = buildLocationKey(item.location)
+    if (seen.has(key)) {
+      return false
+    }
+    seen.add(key)
+    return true
+  })
+}
+
+export const searchLocationSuggestions = async (query: string): Promise<LocationSuggestion[]> => {
+  const trimmedQuery = query.trim()
+  if (trimmedQuery.length < 2) {
+    return []
+  }
+
+  const suggestions: LocationSuggestion[] = []
+
+  const zipCandidate = ZIP_QUERY_REGEX.exec(trimmedQuery)
+  if (zipCandidate) {
+    const [, zip, rawCountry] = zipCandidate
+    const country = (rawCountry ?? 'US').toUpperCase()
+    const zipResult = await geocodeByZip(zip, country)
+    if (zipResult) {
+      suggestions.push({
+        location: zipResult,
+        searchValue: rawCountry ? `${zip},${country}` : zip,
+      })
+    }
+  }
+
+  const primaryResults = await geocode(trimmedQuery)
+  const bestPrimary = pickBestMatch(trimmedQuery, primaryResults)
+  if (bestPrimary) {
+    suggestions.push({ location: bestPrimary, searchValue: formatSearchValue(bestPrimary) })
+    primaryResults.forEach((result) => {
+      if (result !== bestPrimary) {
+        suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+      }
+    })
+  } else {
+    primaryResults.forEach((result) => {
+      suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+    })
+  }
+
+  if (trimmedQuery.includes(',')) {
+    const [cityOnly] = trimmedQuery.split(',')
+    const fallbackQuery = cityOnly.trim()
+    if (fallbackQuery.length >= 2 && fallbackQuery.toLowerCase() !== trimmedQuery.toLowerCase()) {
+      const fallbackResults = await geocode(fallbackQuery)
+      fallbackResults.forEach((result) => {
+        suggestions.push({ location: result, searchValue: formatSearchValue(result) })
+      })
+    }
+  }
+
+  return dedupeSuggestions(suggestions).slice(0, 5)
+}
 
 export const reverseGeocode = async ({ lat, lon }: Coordinates): Promise<GeoLocation> => {
   const apiKey = assertApiKey()
@@ -332,7 +433,7 @@ const fetchPrimaryDailyForecast = async (
     lat: String(lat),
     lon: String(lon),
     units,
-    exclude: 'current,minutely,hourly,alerts',
+    exclude: 'current,minutely,alerts',
     appid: apiKey,
   })
   const url = `${API_BASE}/data/3.0/onecall?${params.toString()}`
@@ -451,12 +552,41 @@ const buildExtendedOutlook = (
     })
 }
 
+const buildHourlyOutlook = (
+  hourlyEntries: HourlyForecastEntry[] | undefined,
+  timezoneOffsetSeconds: number,
+): OptimisticHourlyOutlook[] => {
+  if (!hourlyEntries?.length) {
+    return []
+  }
+
+  return hourlyEntries
+    .filter((entry): entry is HourlyForecastEntry => typeof entry?.temp === 'number' && !Number.isNaN(entry.temp))
+    .slice(0, HOURLY_OUTLOOK_LIMIT)
+    .map((entry) => {
+      const primary = entry.weather?.[0]
+
+      return {
+        id: `hour-${entry.dt}`,
+        time: new Date((entry.dt + timezoneOffsetSeconds) * 1000),
+        temperature: entry.temp,
+        feelsLike: typeof entry.feels_like === 'number' ? entry.feels_like : entry.temp,
+        precipitationChancePercent: clampPopPercent(entry.pop),
+        condition: primary?.main ?? 'Clear',
+        description: primary?.description ?? primary?.main ?? 'Clear skies',
+        icon: primary?.icon,
+      }
+    })
+}
+
 export const __internal = {
   levenshteinDistance,
   pickBestMatch,
   geocodeByZip,
   ZIP_QUERY_REGEX,
+  dedupeLocations,
   buildExtendedOutlook,
+  buildHourlyOutlook,
 }
 
 const fetchForecast = async (
@@ -785,6 +915,7 @@ export const fetchOptimisticForecast = async (
   const highlights = craftHighlights(horizon, units, forecast.city.timezone)
 
   let extendedOutlook: OptimisticExtendedOutlook | undefined
+  let hourlyOutlook: OptimisticHourlyOutlook[] | undefined
   if (extendedResponse) {
     const days = buildExtendedOutlook(extendedResponse.daily, extendedResponse.timezone_offset ?? 0)
     if (days.length) {
@@ -800,6 +931,11 @@ export const fetchOptimisticForecast = async (
         isComplete: false,
         message: EXTENDED_OUTLOOK_UNAVAILABLE_MESSAGE,
       }
+    }
+
+    const hourlyEntries = extendedResponse.hourly
+    if (hourlyEntries?.length) {
+      hourlyOutlook = buildHourlyOutlook(hourlyEntries, extendedResponse.timezone_offset ?? 0)
     }
   } else {
     extendedOutlook = {
@@ -824,6 +960,7 @@ export const fetchOptimisticForecast = async (
     skySummary,
     highlights,
     extendedOutlook,
+    hourlyOutlook,
     coordinates: {
       lat: location.lat,
       lon: location.lon,

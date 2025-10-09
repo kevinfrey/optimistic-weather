@@ -53,4 +53,23 @@ describe('geocoding helpers', () => {
     expect(result?.[1]).toBe('94103')
     expect(result?.[2]).toBe('us')
   })
+
+  it('zip regex ignores plain city queries to avoid false positives', () => {
+    const result = __internal.ZIP_QUERY_REGEX.exec('Lisbon, PT')
+    expect(result).toBeNull()
+  })
+
+  it('deduplicates repeating geo results while keeping unique entries', () => {
+    const items: GeoLocation[] = [
+      { name: 'Paris', lat: 48.8566, lon: 2.3522, country: 'FR' },
+      { name: 'Paris', lat: 48.8566, lon: 2.3522, country: 'FR' },
+      { name: 'Paris', lat: 33.6609, lon: -95.5555, state: 'Texas', country: 'US' },
+    ]
+
+    const deduped = __internal.dedupeLocations(items)
+
+    expect(deduped).toHaveLength(2)
+    expect(deduped.some((location) => location.country === 'FR')).toBe(true)
+    expect(deduped.some((location) => location.country === 'US')).toBe(true)
+  })
 })

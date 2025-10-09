@@ -27,7 +27,7 @@ describe('TenDayOutlook', () => {
     )
 
     expect(html).toContain('10-day Bright Side outlook')
-    expect(html.includes('24-hour highlights')).toBe(false)
+    expect(html).toContain('Today')
     expect(html).toContain('Clouds')
     expect(html).toContain('70°F')
     expect(html).toContain('stay splash-free')

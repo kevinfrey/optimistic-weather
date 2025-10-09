@@ -11,12 +11,11 @@ interface TenDayOutlookProps {
   onRetry?: () => void
 }
 
-const formatDayLabel = (date: Date) =>
-  date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  })
+const formatDayLabel = (date: Date) => {
+  const weekday = date.toLocaleDateString(undefined, { weekday: 'short' })
+  const day = date.getDate()
+  return `${weekday} ${day}`
+}
 
 const isWeekend = (date: Date) => {
   const day = date.getDay()
@@ -40,16 +39,16 @@ const DailyCard = ({ outlook, units, isToday }: DailyCardProps) => {
   return (
     <div
       className={cn(
-        'group flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-200/60 bg-white/85 p-4 shadow-sm transition hover:-translate-y-1 hover:shadow-md',
-        weekend && 'border-amber-200 bg-amber-50/70 dark:border-amber-300/70 dark:bg-amber-100/30',
-        isToday && 'border-sky-200 bg-sky-50/80 dark:border-sky-300/70 dark:bg-sky-100/30',
+        'group flex min-w-0 flex-col gap-3 rounded-3xl border border-white/70 bg-white/80 p-4 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.4)] backdrop-blur-lg transition hover:-translate-y-1 hover:shadow-xl',
+        weekend && 'border-amber-200/80 bg-amber-50/70',
+        isToday && 'border-sky-300/80 bg-sky-50/80',
       )}
     >
       <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         <span className="text-slate-700">
           {isToday ? 'Today' : formatDayLabel(outlook.date)}
         </span>
-        <span className="rounded-full bg-slate-900/90 px-2 py-0.5 text-[10px] font-bold text-white">
+        <span className="rounded-full bg-slate-900/90 px-2 py-0.5 text-[10px] font-bold text-white shadow">
           {outlook.condition}
         </span>
       </div>
@@ -78,7 +77,7 @@ export const TenDayOutlook = ({
 }: TenDayOutlookProps) => {
   if (isLoading) {
     return (
-      <section className="rounded-2xl border border-slate-200/70 bg-white/70 p-5 text-sm text-slate-600">
+      <section className="rounded-3xl border border-white/70 bg-white/75 p-5 text-sm text-slate-600 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg">
         Gathering long-range optimism…
       </section>
     )
@@ -86,13 +85,13 @@ export const TenDayOutlook = ({
 
   if (!days.length) {
     return (
-      <section className="rounded-2xl border border-slate-200/70 bg-white/70 p-5 text-sm text-slate-600">
+      <section className="rounded-3xl border border-white/70 bg-white/75 p-5 text-sm text-slate-600 shadow-[0_18px_45px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg">
         <p>{message ?? 'We could not collect the extended outlook for this location right now.'}</p>
         {onRetry ? (
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 inline-flex items-center rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-400 hover:text-slate-800"
+            className="mt-3 inline-flex items-center rounded-full border border-slate-300/80 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-400 hover:text-slate-800"
           >
             Try again
           </button>
